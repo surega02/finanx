@@ -1,0 +1,8 @@
+node_modules
+dist
+*.local
+.firebase
+.firebaserc
+impeccable-screenshot-*.png
+.impeccable/review
+.env
