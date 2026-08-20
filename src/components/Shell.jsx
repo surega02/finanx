@@ -1,6 +1,7 @@
 import React from 'react';
 import { Icon } from '../lib/icons.jsx';
 import { useApp } from '../App.jsx';
+import { isCloudEnabled } from '../lib/supabase.js';
 import logo from '../assets/logo.png';
 import Dashboard from './Dashboard.jsx';
 import Transactions from './Transactions.jsx';
@@ -106,10 +107,12 @@ export default function Shell() {
 
         <main className="surface" id="main">
           <div className="surface__inner">
-            <div className="demo-banner" role="note">
-              <Icon name="stamp" size={15} />
-              <span>{t.demoBanner}</span>
-            </div>
+            {!isCloudEnabled && (
+              <div className="demo-banner" role="note">
+                <Icon name="stamp" size={15} />
+                <span>{t.demoBanner}</span>
+              </div>
+            )}
             <ShellView />
           </div>
         </main>

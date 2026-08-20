@@ -6,3 +6,5 @@ dist
 impeccable-screenshot-*.png
 .impeccable/review
 .env
+
+.vercel
