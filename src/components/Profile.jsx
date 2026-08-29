@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../App.jsx';
 import { Icon } from '../lib/icons.jsx';
 import { shortDate } from '../lib/format.js';
+import { VERSION, COPYRIGHT_YEAR } from '../lib/version.js';
 
 export default function Profile() {
   const { user, store, t, lang, setLang, signOut } = useApp();
@@ -72,6 +73,8 @@ export default function Profile() {
           {t.logout}
         </button>
       </div>
+
+      <p className="profile-version">© {COPYRIGHT_YEAR} Finanx · v{VERSION}</p>
     </>
   );
 }

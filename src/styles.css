@@ -2200,6 +2200,18 @@ textarea.input {
   gap: 10px;
 }
 
+.profile-version {
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-ledger);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .profile-card__body {
     grid-template-columns: 1fr;
