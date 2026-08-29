@@ -66,8 +66,6 @@ export default function TransactionSheet() {
   if (!open) return null;
 
   const parsedAmount = Number(String(amount).replace(/[^0-9.]/g, ''));
-  const today = todayISO();
-  const maxDate = new Date().toISOString().slice(0, 10);
 
   const submit = () => {
     if (!parsedAmount || parsedAmount <= 0) {
@@ -78,7 +76,7 @@ export default function TransactionSheet() {
       setError(t.category);
       return;
     }
-    if (!date || date > maxDate) {
+    if (!date) {
       setError(t.date);
       return;
     }
@@ -191,7 +189,6 @@ export default function TransactionSheet() {
               className="input caret-ink"
               type="date"
               value={date}
-              max={today}
               onChange={(e) => setDate(e.target.value)}
             />
           </div>
