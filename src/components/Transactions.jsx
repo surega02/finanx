@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../App.jsx';
 import { Icon } from '../lib/icons.jsx';
-import { money, shortDateNoYear, monthRangeISO } from '../lib/format.js';
+import { money, shortDateNoYear, monthName, monthRangeISO } from '../lib/format.js';
 import Stamp from './Stamp.jsx';
 import Toast from './Toast.jsx';
 import TransactionSheet from './TransactionSheet.jsx';
 
 const PAGE_SIZE = 10;
+const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
 
 export default function Transactions() {
   const { store, t, lang, setSheet, pushToast, month, currentMonth } = useApp();
   const [typeFilter, setTypeFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [monthFilter, setMonthFilter] = useState('current');
+  const [monthFilter, setMonthFilter] = useState(() => String(currentMonth.monthIndex));
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
 
@@ -25,8 +26,8 @@ export default function Transactions() {
   const filtered = useMemo(() => {
     let rows = store.listActiveTransactions();
 
-    if (monthFilter === 'current') {
-      const { start, end } = monthRangeISO(currentMonth.year, currentMonth.monthIndex);
+    if (monthFilter !== 'all') {
+      const { start, end } = monthRangeISO(currentMonth.year, Number(monthFilter));
       rows = rows.filter((x) => x.date >= start && x.date < end);
     }
 
@@ -90,8 +91,12 @@ export default function Transactions() {
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
           >
-            <option value="current">{t.thisMonth}</option>
             <option value="all">{t.all}</option>
+            {MONTH_INDEXES.map((monthIndex) => (
+              <option key={monthIndex} value={monthIndex}>
+                {monthName(monthIndex, lang)}
+              </option>
+            ))}
           </select>
         </div>
 
