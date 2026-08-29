@@ -78,7 +78,9 @@ components:
     rounded: "{rounded.radius-tight}"
 ---
 
-# Design System: Finanx
+# Design System: Finanx v1.0.0
+
+Status: baseline desain rilis pertama. Dokumen ini dibekukan untuk seri v1; perubahan arah desain berikutnya dicatat pada dokumen desain versi baru.
 
 ## Overview
 

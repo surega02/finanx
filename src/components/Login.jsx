@@ -20,7 +20,7 @@ export default function Login() {
       }
       return;
     }
-    // Simulated Google sign-in; replaces the Firebase Auth flow.
+    // Simulated Google sign-in for local demo mode.
     setTimeout(() => {
       setUser(store.state.user);
     }, 700);

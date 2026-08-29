@@ -1,5 +1,5 @@
 -- ============================================================
--- FINANX — Supabase schema
+-- FINANX v1.0.0 — Supabase schema
 -- Tables + Row Level Security for the personal finance ledger.
 -- Run this in the Supabase SQL editor (or as a migration).
 -- ============================================================
@@ -17,7 +17,7 @@ create table if not exists public.profiles (
 
 -- Categories: per-user categories, seeded from the app's system list on first sign-in.
 create table if not exists public.categories (
-  id text primary key,
+  id text not null,
   user_id uuid not null references auth.users (id) on delete cascade,
   type text not null check (type in ('income', 'expense')),
   name text not null,
@@ -26,23 +26,27 @@ create table if not exists public.categories (
   source text not null default 'user',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  deleted_at timestamptz
+  deleted_at timestamptz,
+  primary key (user_id, id)
 );
 
 create index if not exists categories_user_idx on public.categories (user_id, type);
 
 -- Transactions: one row per ledger entry, category stored as a foreign key.
 create table if not exists public.transactions (
-  id text primary key,
+  id text not null,
   user_id uuid not null references auth.users (id) on delete cascade,
   type text not null check (type in ('income', 'expense')),
   amount bigint not null check (amount > 0),
   date date not null,
-  category_id text not null references public.categories (id),
+  category_id text not null,
   description text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  deleted_at timestamptz
+  deleted_at timestamptz,
+  primary key (user_id, id),
+  foreign key (user_id, category_id)
+    references public.categories (user_id, id)
 );
 
 create index if not exists transactions_user_date_idx on public.transactions (user_id, date desc);
@@ -73,6 +77,10 @@ returns void
 language plpgsql security definer set search_path = public
 as $$
 begin
+  if auth.uid() is null or auth.uid() <> uid then
+    raise exception 'Not authorized to seed categories for this user';
+  end if;
+
   if not exists (select 1 from public.categories where user_id = uid and source = 'system') then
     insert into public.categories (id, user_id, type, name, name_id, icon, source)
     values
