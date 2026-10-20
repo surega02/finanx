@@ -8,6 +8,10 @@ Ditemukan 4 masalah: 2 P1 (tinggi) dan 2 P2 (sedang). Perbaikan prioritas adalah
 
 ## Temuan
 
+> Penyebab kegagalan akun B telah dikonfirmasi dari hasil constraint database: kategori dan transaksi masih memakai primary key global `(id)`, serta referensi kategori belum menyertakan pemilik. Disiapkan migrasi `supabase/migrations/20261020_per_user_keys.sql` yang mempertahankan data dan mengganti key menjadi per pengguna. Migrasi tidak dijalankan pada Supabase produksi oleh agent.
+
+> Tindak lanjut laporan akun B gagal memuat: RPC seed yang tidak tersedia kini memiliki fallback terbatas melalui RLS; kode error dan tahap pemuatan ditampilkan tanpa detail sensitif. Seed SQL dibuat idempoten terhadap login bersamaan. Seluruh 13 pengujian lokal dan build lulus. Penyebab pada deployment belum dipastikan; tersedia pemeriksaan metadata read-only di `supabase/diagnose-auth.sql`. Perubahan frontend dan SQL lokal belum berarti deployment/database produksi telah diperbarui.
+
 > Status tindak lanjut, 20 Oktober 2026: keempat temuan di bawah telah ditangani pada kode lokal. Store mengikuti UID sesi aktif, cache cloud tidak lagi dipersist, hasil pemuatan lama diabaikan, dan error pemuatan ditampilkan dengan opsi pemulihan. Logout gagal juga menutup data serta menampilkan opsi ulang. Regresi otomatis tersedia melalui `npm run test:auth`; seluruh 10 pengujian dan build produksi lulus. Verifikasi OAuth/RLS pada proyek Supabase nyata belum dilakukan. Rujukan baris dan uraian berikut merekam kondisi saat audit awal, sebelum perbaikan.
 
 ### 1. [P1] Pergantian identitas sesi tidak mengganti store

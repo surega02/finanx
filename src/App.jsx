@@ -111,6 +111,13 @@ export default function App() {
       ) : isCloudEnabled && authState.status === 'error' ? (
         <div className="loading" role="alert">
           <p>{t[authState.error]}</p>
+          {authState.diagnostic && (
+            <>
+              <p>{t.authDiagnostic}: <code>{authState.diagnostic.stage} / {authState.diagnostic.code}</code></p>
+              {['23505', '42P10'].includes(authState.diagnostic.code) && <p>{t.authSchemaMismatch}</p>}
+              {authState.diagnostic.code === '42501' && <p>{t.authAccessDenied}</p>}
+            </>
+          )}
           <button type="button" className="btn btn--ink" onClick={() => authState.error === 'logoutFailed' ? signOut() : auth.current.retry()}>
             {t.retry}
           </button>

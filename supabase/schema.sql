@@ -81,7 +81,6 @@ begin
     raise exception 'Not authorized to seed categories for this user';
   end if;
 
-  if not exists (select 1 from public.categories where user_id = uid and source = 'system') then
     insert into public.categories (id, user_id, type, name, name_id, icon, source)
     values
       ('income_salary',       uid, 'income',  'Salary',        'Gaji',          'wallet',    'system'),
@@ -96,7 +95,7 @@ begin
       ('expense_entertainment', uid, 'expense', 'Entertainment','Hiburan',      'gamepad',   'system'),
       ('expense_health',      uid, 'expense', 'Health',        'Kesehatan',     'heart',     'system'),
       ('expense_education',   uid, 'expense', 'Education',     'Pendidikan',    'book',      'system'),
-      ('expense_other',       uid, 'expense', 'Other',         'Lainnya',       'ellipsis',  'system');
-  end if;
+      ('expense_other',       uid, 'expense', 'Other',         'Lainnya',       'ellipsis',  'system')
+    on conflict (user_id, id) do nothing;
 end;
 $$;

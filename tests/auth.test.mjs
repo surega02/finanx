@@ -157,14 +157,14 @@ function storeHarness() {
   return { Store: compile('../src/lib/store.js', { './format.js': format, './supabase.js': helpers }).Store, cache };
 }
 
-function fakeCloud({ seedError = null, catsError = null, txError = null, writes = [] } = {}) {
+function fakeCloud({ seedError = null, catsError = null, txError = null, writeError = null, writes = [] } = {}) {
   return {
     rpc: async () => ({ error: seedError }),
     from(table) {
       return {
         select() { return this; }, eq() { return this; }, order() { return this; },
         then(resolve) { resolve({ data: table === 'transactions' ? [{ id: 'private-A', date: '2026-10-20', category_id: 'expense_food' }] : [], error: table === 'transactions' ? txError : catsError }); },
-        upsert(payload) { writes.push(payload); return Promise.resolve({ error: null }); },
+        upsert(payload, options) { writes.push({ payload, options }); return Promise.resolve({ error: writeError }); },
       };
     },
   };
@@ -198,9 +198,53 @@ test('cloud seed and query failures reject instead of creating empty successful 
   const { Store, cache } = storeHarness();
   for (const key of ['seedError', 'catsError', 'txError']) {
     const error = new Error(key);
-    await assert.rejects(Store.loadCloud(fakeCloud({ [key]: error }), { id: 'A' }), error);
+    await assert.rejects(Store.loadCloud(fakeCloud({ [key]: error }), { id: 'A' }), (failure) => {
+      assert.equal(failure.code, 'UNKNOWN');
+      assert.equal(failure.stage, { seedError: 'categoriesSeed', catsError: 'categoriesRead', txError: 'transactionsRead' }[key]);
+      return true;
+    });
   }
   assert.equal(cache.size, 0);
+});
+
+test('missing seed RPC uses per-user conflict key without overwriting data', async () => {
+  const { Store, cache } = storeHarness();
+  for (const code of ['PGRST202', '42883']) {
+    const writes = [];
+    const store = await Store.loadCloud(fakeCloud({ seedError: { code }, writes }), { id: 'B' });
+    assert.equal(store.state.user.uid, 'B');
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].payload.length, 13);
+    assert.ok(writes[0].payload.every((row) => row.user_id === 'B'));
+    assert.equal(writes[0].options.onConflict, 'user_id,id');
+    assert.equal(writes[0].options.ignoreDuplicates, true);
+  }
+  assert.equal(cache.size, 0);
+});
+
+test('fallback rejects incompatible schemas and RLS errors without leaking raw details', async () => {
+  const { Store } = storeHarness();
+  for (const code of ['42P10', '23505', '42501']) {
+    await assert.rejects(Store.loadCloud(fakeCloud({ seedError: { code: 'PGRST202' }, writeError: { code, message: 'PRIVATE SQL' } }), { id: 'B' }), (error) => {
+      assert.equal(error.code, code);
+      assert.equal(error.stage, 'categoriesSeed');
+      assert.equal(error.message.includes('PRIVATE SQL'), false);
+      return true;
+    });
+  }
+  const writes = [];
+  await assert.rejects(Store.loadCloud(fakeCloud({ seedError: { code: '42501' }, writes }), { id: 'B' }));
+  assert.equal(writes.length, 0, 'permission failure must not trigger fallback');
+});
+
+test('account loading retains only safe diagnostic stage and code', async () => {
+  const h = harness(() => { throw Object.assign(new Error('PRIVATE SQL'), { code: '23505', stage: 'categoriesSeed' }); }, userSession('B'));
+  try {
+    await tick();
+    assert.equal(h.state.status, 'error');
+    assert.deepEqual(h.state.diagnostic, { stage: 'categoriesSeed', code: '23505' });
+    assert.equal(JSON.stringify(h.state).includes('PRIVATE SQL'), false);
+  } finally { h.controller.stop(); }
 });
 
 test('deactivated stores cannot write data or profiles', async () => {

@@ -77,3 +77,30 @@ Pada Authentication → URL Configuration:
 ## 9. Regresi autentikasi lokal
 
 Jalankan `npm run test:auth` untuk menguji pergantian identitas, sesi lintas tab melalui event SDK tiruan, hasil pemuatan kedaluwarsa, error sesi/query/logout, isolasi cache demo, dan penonaktifan store lama. Pengujian ini menggunakan client tiruan; pemeriksaan OAuth dan RLS dengan dua akun nyata tetap diperlukan pada proyek Supabase uji.
+
+## 10. Akun kedua gagal memuat data
+
+Pesan pemuatan gagal belum membuktikan penyebabnya. Frontend menampilkan tahap dan kode error tanpa detail SQL atau data pribadi. Untuk pemeriksaan struktur, jalankan `supabase/diagnose-auth.sql` di SQL Editor; script hanya membaca metadata.
+
+- `categoriesSeed / 23505`: periksa constraint unik kategori. Primary key kategori harus `(user_id, id)`, bukan `id` saja. Duplikasi seed pada login bersamaan juga dapat memicu kode ini pada RPC lama.
+- `categoriesSeed / 42P10`: target konflik `(user_id, id)` belum mempunyai constraint unik yang sesuai. Perlu migrasi skema lama setelah meninjau hasil diagnosis dan melakukan backup; jangan menghapus tabel untuk mengatasi login.
+- `42501`: periksa grant dan kebijakan RLS. Jangan menonaktifkan RLS.
+- RPC tidak ditemukan (`PGRST202` atau `42883`): frontend mencoba seed langsung melalui client pengguna dengan konflik `(user_id, id)` dan tetap tunduk pada RLS. Error lain tidak memicu fallback.
+- `UNKNOWN`: kegagalan belum memiliki kode database yang dikenali; periksa respons request gagal di Network browser tanpa membagikan token atau header Authorization.
+
+Seed RPC pada `schema.sql` kini memakai `ON CONFLICT (user_id, id) DO NOTHING`, sehingga aman dipanggil bersamaan dan dapat melengkapi kategori sistem yang belum ada. Perubahan file SQL lokal tidak otomatis memperbarui RPC database yang sudah dipasang. Setelah memastikan key gabungan sudah benar, perbarui definisi fungsi `ensure_system_categories` dari schema tersebut pada proyek yang digunakan.
+
+Perubahan frontend juga harus dideploy agar pesan diagnosis dan fallback tersedia pada aplikasi Vercel. Diagnosis produksi tetap diperlukan bila akun kedua gagal setelah deployment.
+
+## 11. Migrasi skema lama dengan primary key ID global
+
+Jika hasil diagnosis menunjukkan `categories_pkey PRIMARY KEY (id)` dan `transactions_pkey PRIMARY KEY (id)`, jalankan migrasi khusus berikut, bukan mengulang `schema.sql` yang menggunakan `CREATE TABLE IF NOT EXISTS`:
+
+1. Buat backup database dan lakukan saat trafik rendah; migrasi mengunci kategori/transaksi selama perubahan constraint.
+2. Buka `supabase/migrations/20261020_per_user_keys.sql`, salin seluruh isinya ke Supabase SQL Editor, lalu jalankan sebagai satu script.
+3. Jalankan kembali `supabase/diagnose-auth.sql`. Kedua primary key harus `(user_id, id)` dan foreign key kategori transaksi harus `(user_id, category_id)` ke kategori `(user_id, id)`.
+4. Login akun B dan tekan Coba lagi. Pastikan kategori bawaan tersedia, data A tidak terlihat, lalu login kembali sebagai A untuk memastikan data lamanya tetap tersedia.
+
+Migrasi juga memperbarui RPC seed dalam transaksi yang sama. Data kategori/transaksi tidak dihapus atau dipindahkan antar akun; RLS dan foreign key ke `auth.users` dipertahankan. Semua perubahan dibatalkan bila pemeriksaan awal atau perubahan constraint gagal. Jika ditemukan transaksi yang merujuk kategori milik akun lain, migrasi sengaja berhenti agar data ditinjau tanpa menebak pemiliknya. Jika terjadi lock timeout, ulangi pada waktu trafik rendah.
+
+Validasi lokal pada PostgreSQL dengan fixture skema lama mencakup pemeliharaan data, seed dua akun, pemanggilan seed berulang, pengulangan migrasi, keberadaan RLS, penolakan foreign key lintas pemilik, serta rollback pemeriksaan awal. File SQL pengujian sementara telah dihapus setelah validasi selesai.

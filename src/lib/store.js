@@ -115,6 +115,14 @@ function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function cloudError(stage, error) {
+  const failure = new Error('Cloud account loading failed');
+  failure.stage = stage;
+  // Preserve a diagnostic code, never SQL details, tokens, or personal data.
+  failure.code = /^[A-Z0-9]{4,12}$/.test(error?.code || '') ? error.code : 'UNKNOWN';
+  return failure;
+}
+
 export class Store {
   constructor(initial, opts = {}) {
     this.data = deepClone(initial);
@@ -161,14 +169,26 @@ export class Store {
 
     const uid = user.uid;
     const seedRes = await supabase.rpc('ensure_system_categories', { uid });
-    if (seedRes.error) throw seedRes.error;
+    if (seedRes.error) {
+      if (['PGRST202', '42883'].includes(seedRes.error.code)) {
+        // Older deployments may not have the RPC. Use the same per-user key,
+        // enforced by RLS; never fall back to demo data or overwrite categories.
+        const fallback = await supabase.from('categories').upsert(
+          SYSTEM_CATEGORIES.map((category) => catToRow(category, uid)),
+          { onConflict: 'user_id,id', ignoreDuplicates: true }
+        );
+        if (fallback.error) throw cloudError('categoriesSeed', fallback.error);
+      } else {
+        throw cloudError('categoriesSeed', seedRes.error);
+      }
+    }
 
     const [catsRes, txRes] = await Promise.all([
       supabase.from('categories').select('*').eq('user_id', uid),
       supabase.from('transactions').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
     ]);
-    if (catsRes.error) throw catsRes.error;
-    if (txRes.error) throw txRes.error;
+    if (catsRes.error) throw cloudError('categoriesRead', catsRes.error);
+    if (txRes.error) throw cloudError('transactionsRead', txRes.error);
     if (!Array.isArray(catsRes.data) || !Array.isArray(txRes.data)) {
       throw new Error('Invalid cloud data response');
     }

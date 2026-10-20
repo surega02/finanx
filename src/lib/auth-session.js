@@ -13,7 +13,7 @@ export function createAuthSession({ client, loadStore, onChange }) {
     state = next;
     onChange(next);
   };
-  const clear = (status, error = null) => publish({ status, error, user: null, store: null });
+  const clear = (status, error = null, diagnostic = null) => publish({ status, error, diagnostic, user: null, store: null });
 
   const accept = (session, force = false) => {
     if (stopped || signingOut || logoutPending) return;
@@ -33,8 +33,15 @@ export function createAuthSession({ client, loadStore, onChange }) {
         const store = await loadStore(client, user);
         if (stopped || ticket !== generation) { store.deactivate(); return; }
         publish({ status: 'ready', user: state.user, store, error: null });
-      } catch {
-        if (!stopped && ticket === generation) clear('error', 'cloudLoadFailed');
+      } catch (error) {
+        if (!stopped && ticket === generation) {
+          const stages = ['categoriesSeed', 'categoriesRead', 'transactionsRead'];
+          const diagnostic = {
+            stage: stages.includes(error?.stage) ? error.stage : 'accountLoad',
+            code: /^[A-Z0-9]{4,12}$/.test(error?.code || '') ? error.code : 'UNKNOWN',
+          };
+          clear('error', 'cloudLoadFailed', diagnostic);
+        }
       }
     }, 0);
   };
