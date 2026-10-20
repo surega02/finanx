@@ -7,15 +7,20 @@ import logo from '../assets/logo.png';
 export default function Login() {
   const { t, setUser, store } = useApp();
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const signIn = async () => {
     setBusy(true);
+    setFailed(false);
     if (isCloudEnabled) {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin },
-      });
-      if (error) {
+      try {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo: window.location.origin },
+        });
+        if (error) throw error;
+      } catch {
+        setFailed(true);
         setBusy(false);
       }
       return;
@@ -51,6 +56,7 @@ export default function Login() {
           <Icon name="google" size={20} strokeWidth={1.9} />
           {busy ? t.signingIn : t.signIn}
         </button>
+        {failed && <p role="alert">{t.signInFailed}</p>}
         {!isCloudEnabled && (
           <p className="login__demo-note">
             <Icon name="stamp" size={13} />

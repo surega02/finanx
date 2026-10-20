@@ -7,8 +7,9 @@ Backend cloud: Supabase Postgres
 
 Finanx v1 mempunyai dua mode dengan bentuk domain yang sama:
 
-- Mode demo menyimpan state JSON pada `localStorage` dengan key `finanx:v1`.
-- Mode cloud membaca dan menulis tabel Supabase serta memakai Supabase Auth sebagai identitas pengguna.
+- Mode demo menyimpan state JSON pada `localStorage` dengan key `finanx:demo:v1`.
+- Mode cloud membaca dan menulis tabel Supabase serta memakai Supabase Auth sebagai identitas pengguna. Data keuangan cloud hanya berada dalam memori sesi aplikasi dan tidak dipersist ke cache demo. Penyimpanan sesi/token tetap ditangani Supabase Auth.
+- Key lama `finanx:v1` dibersihkan. Saat membuka demo, data lama hanya dimigrasikan bila UID adalah `demo-uid`; cache beridentitas cloud tidak dibuka sebagai demo.
 
 ## 2. Model domain aplikasi
 

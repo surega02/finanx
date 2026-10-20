@@ -54,6 +54,9 @@ Pada Authentication → URL Configuration:
 - Environment lengkap: mode cloud, Google OAuth asli, data dibaca dari dan disinkronkan ke Supabase.
 - Environment kosong/tidak lengkap: mode demo, login simulasi, data contoh dan perubahan disimpan di `localStorage`.
 - Banner data contoh hanya tampil pada mode demo.
+- Store cloud baru dibuka setelah data untuk UID sesi aktif berhasil dimuat. Pergantian akun dan logout menutup store lama serta membatalkan penerapan hasil pemuatan yang kedaluwarsa.
+- Data keuangan cloud tidak disimpan dalam `localStorage`; mode demo menggunakan key terpisah `finanx:demo:v1`. Supabase Auth tetap mengelola penyimpanan sesi/token.
+- Kegagalan pemuatan cloud menampilkan status gagal dengan pilihan coba lagi atau keluar. Kegagalan logout menutup data dan menampilkan pilihan mengulangi logout.
 
 ## 7. Pemeriksaan minimum
 
@@ -70,3 +73,7 @@ Pada Authentication → URL Configuration:
 - Semua operasi data harus dijalankan sebagai pengguna yang terautentikasi.
 - Fungsi seed memverifikasi bahwa `auth.uid()` sama dengan parameter pengguna.
 - Uji kebijakan RLS setiap kali skema atau requirement versi berikutnya berubah.
+
+## 9. Regresi autentikasi lokal
+
+Jalankan `npm run test:auth` untuk menguji pergantian identitas, sesi lintas tab melalui event SDK tiruan, hasil pemuatan kedaluwarsa, error sesi/query/logout, isolasi cache demo, dan penonaktifan store lama. Pengujian ini menggunakan client tiruan; pemeriksaan OAuth dan RLS dengan dua akun nyata tetap diperlukan pada proyek Supabase uji.

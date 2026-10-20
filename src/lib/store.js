@@ -84,7 +84,8 @@ const SEED = [
   deleted_at: null,
 }));
 
-const KEY = 'finanx:v1';
+const KEY = 'finanx:demo:v1';
+const LEGACY_KEY = 'finanx:v1';
 
 function makeTimestamp() {
   return new Date().toISOString();
@@ -98,7 +99,7 @@ export function seedData() {
   return {
     user: {
       uid: 'demo-uid',
-      name: 'Ega Pramudita',
+      name: 'Ega',
       email: 'ega@finanx.app',
       photo: null,
       created_at: '2024-03-12T09:00:00Z',
@@ -120,12 +121,33 @@ export class Store {
     this._changed = false;
     this._supabase = opts.supabase || null;
     this._userId = opts.userId || null;
+    this._transient = !!opts.transient;
+    this._inactive = false;
+  }
+
+  static empty() {
+    return new Store({ user: null, transactions: [], categories: [], language: 'id' }, { transient: true });
+  }
+
+  static clearLegacyCache() {
+    try { localStorage.removeItem(LEGACY_KEY); } catch { /* storage unavailable */ }
   }
 
   static load() {
     try {
+      // Only migrate known demo data. Cloud identities must never enter demo storage.
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      Store.clearLegacyCache();
+      if (legacy && !localStorage.getItem(KEY)) {
+        const data = JSON.parse(legacy);
+        if (data.user?.uid === 'demo-uid') localStorage.setItem(KEY, legacy);
+      }
       const raw = localStorage.getItem(KEY);
-      if (raw) return new Store(JSON.parse(raw));
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.user?.uid === 'demo-uid') return new Store(data);
+        localStorage.removeItem(KEY);
+      }
     } catch {
       /* fresh start */
     }
@@ -138,26 +160,18 @@ export class Store {
     store.data.user = user;
 
     const uid = user.uid;
-    try {
-      await supabase.rpc('ensure_system_categories', { uid });
-    } catch {
-      /* seed via direct insert fallback */
-      try {
-        const existing = await supabase.from('categories').select('id').eq('user_id', uid);
-        if (!existing.data || existing.data.length === 0) {
-          await supabase.from('categories').insert(
-            SYSTEM_CATEGORIES.map((c) => catToRow(c, uid))
-          );
-        }
-      } catch {
-        /* ignore */
-      }
-    }
+    const seedRes = await supabase.rpc('ensure_system_categories', { uid });
+    if (seedRes.error) throw seedRes.error;
 
     const [catsRes, txRes] = await Promise.all([
       supabase.from('categories').select('*').eq('user_id', uid),
       supabase.from('transactions').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
     ]);
+    if (catsRes.error) throw catsRes.error;
+    if (txRes.error) throw txRes.error;
+    if (!Array.isArray(catsRes.data) || !Array.isArray(txRes.data)) {
+      throw new Error('Invalid cloud data response');
+    }
     const cats = (catsRes.data || []).map(rowToCat);
     const lookup = new Map((catsRes.data || []).map((r) => [r.id, rowToCat(r)]));
     const transactions = (txRes.data || []).map((r) => rowToTx(r, lookup));
@@ -165,11 +179,16 @@ export class Store {
     store.data = deepClone({ user, transactions, categories: cats, language: 'id' });
     store._supabase = supabase;
     store._userId = uid;
-    store.persist();
     return store;
   }
 
+  deactivate() {
+    this._inactive = true;
+    this.data = { user: null, transactions: [], categories: [], language: 'id' };
+  }
+
   persist() {
+    if (this._supabase || this._transient || this._inactive) return;
     try {
       localStorage.setItem(KEY, JSON.stringify(this.data));
     } catch {
@@ -178,7 +197,7 @@ export class Store {
   }
 
   _push(table, rows) {
-    if (!this._supabase || !this._userId) return;
+    if (this._inactive || !this._supabase || !this._userId) return;
     const payload = (Array.isArray(rows) ? rows : [rows]).map((r) => ({ ...r, user_id: this._userId }));
     this._supabase.from(table).upsert(payload).then();
   }
@@ -290,7 +309,7 @@ export class Store {
   setLanguage(lang) {
     this.data.language = lang;
     this.persist();
-    if (this._supabase && this.data.user) {
+    if (!this._inactive && this._supabase && this.data.user) {
       this._supabase.from('profiles').upsert(profileRow(this.data.user, lang)).then();
     }
   }

@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Store, currentMonth } from './lib/store.js';
 import { LANG, LANGUAGES } from './lib/i18n.js';
 import { supabase, isCloudEnabled, appUserFromAuth } from './lib/supabase.js';
+import { createAuthSession } from './lib/auth-session.js';
 import Login from './components/Login.jsx';
 import Shell from './components/Shell.jsx';
 
@@ -12,8 +13,17 @@ export function useApp() {
 }
 
 export default function App() {
-  const [store, setStore] = useState(() => Store.load());
-  const [user, setUser] = useState(null);
+  const [demoStore] = useState(() => {
+    if (!isCloudEnabled) return Store.load();
+    Store.clearLegacyCache();
+    return Store.empty();
+  });
+  const [demoUser, setDemoUser] = useState(null);
+  const [authState, setAuthState] = useState({ status: 'loading', store: null, user: null, error: null });
+  const auth = useRef(null);
+  const store = isCloudEnabled ? authState.store || demoStore : demoStore;
+  const user = isCloudEnabled ? (authState.status === 'ready' ? appUserFromAuth(authState.user) : null) : demoUser;
+  const setUser = isCloudEnabled ? undefined : setDemoUser;
   const [lang, setLangState] = useState(() => store.state.language || 'id');
   const [view, setView] = useState('dashboard');
   const [month, setMonth] = useState(() => currentMonth());
@@ -27,34 +37,23 @@ export default function App() {
       return () => clearTimeout(timer);
     }
 
-    let active = true;
-    const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
-      if (data.session) {
-        const s = await Store.loadCloud(supabase, data.session.user);
-        if (!active) return;
-        setStore(s);
-        setLangState(s.state.language || 'id');
-        setUser(appUserFromAuth(data.session.user));
-      }
-      setBooting(false);
-    };
-    init();
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!active) return;
-      if (session) {
-        setUser(appUserFromAuth(session.user));
-      } else {
-        setUser(null);
-      }
+    const controller = createAuthSession({
+      client: supabase,
+      loadStore: Store.loadCloud,
+      onChange: (next) => {
+        setAuthState(next);
+        if (next.status === 'ready') setLangState(next.store.state.language || 'id');
+        else {
+          setSheet(null);
+          setToast(null);
+          setView('dashboard');
+          setMonth(currentMonth());
+        }
+      },
     });
-
-    return () => {
-      active = false;
-      sub.subscription.unsubscribe();
-    };
+    auth.current = controller;
+    controller.start();
+    return () => controller.stop();
   }, []);
 
   const t = useMemo(() => LANG[lang] || LANG.id, [lang]);
@@ -72,13 +71,14 @@ export default function App() {
 
   const signOut = async () => {
     if (isCloudEnabled) {
-      try {
-        await supabase.auth.signOut();
-      } catch {
-        /* ignore */
-      }
+      Store.clearLegacyCache();
+      await auth.current.signOut();
+    } else {
+      setDemoUser(null);
+      setSheet(null);
+      setToast(null);
+      setView('dashboard');
     }
-    setUser(null);
   };
 
   const value = {
@@ -103,10 +103,20 @@ export default function App() {
 
   return (
     <AppContext.Provider value={value}>
-      {booting ? (
+      {(isCloudEnabled ? authState.status === 'loading' : booting) ? (
         <div className="loading" role="status">
           <div className="loading__stamp"><span>F</span></div>
           <p className="loading__text">{t.loading}</p>
+        </div>
+      ) : isCloudEnabled && authState.status === 'error' ? (
+        <div className="loading" role="alert">
+          <p>{t[authState.error]}</p>
+          <button type="button" className="btn btn--ink" onClick={() => authState.error === 'logoutFailed' ? signOut() : auth.current.retry()}>
+            {t.retry}
+          </button>
+          {authState.error !== 'logoutFailed' && (
+            <button type="button" className="btn" onClick={signOut}>{t.logout}</button>
+          )}
         </div>
       ) : user ? (
         <Shell />
