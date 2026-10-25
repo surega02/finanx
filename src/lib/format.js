@@ -21,17 +21,18 @@ const fmtNumber = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
 
 export function money(value, { compact = false } = {}) {
   if (compact) {
-    const v = Math.round(value);
+    const v = Math.round(Number(value));
     if (v >= 1_000_000_000) return `Rp${(v / 1_000_000_000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} M`;
     if (v >= 1_000_000) return `Rp${(v / 1_000_000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jt`;
     if (v >= 1_000) return `Rp${(v / 1_000).toLocaleString('id-ID', { maximumFractionDigits: 0 })} rb`;
   }
-  return fmtIDR.format(value);
+  return fmtIDR.format(typeof value === 'string' && /^-?\d+$/.test(value) ? BigInt(value) : value);
 }
 
 export function number(value) {
   return fmtNumber.format(value);
 }
+export function moneyDelta(value) { return `${value > 0n ? '+' : ''}${money(value)}`; }
 
 export function monthName(monthIndex, lang) {
   return lang === 'id' ? MONTHS_ID[monthIndex] : MONTHS_EN[monthIndex];
@@ -61,10 +62,10 @@ export function todayISO() {
 }
 
 export function monthRangeISO(year, monthIndex) {
-  const start = `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+  const start = `${String(year).padStart(4, '0')}-${String(monthIndex + 1).padStart(2, '0')}-01`;
   const nextYear = monthIndex === 11 ? year + 1 : year;
   const nextMonth = monthIndex === 11 ? 0 : monthIndex + 1;
-  const end = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`;
+  const end = nextYear === 10000 ? '9999-12-32' : `${String(nextYear).padStart(4, '0')}-${String(nextMonth + 1).padStart(2, '0')}-01`;
   return { start, end };
 }
 

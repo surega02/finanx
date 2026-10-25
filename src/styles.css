@@ -2599,3 +2599,45 @@ textarea.input {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* V2 additions inherit the stamped register; amounts remain exact. */
+.ledger-note { display: block; font-size: 12px; line-height: 1.6; color: var(--ink-soft); overflow-wrap: anywhere; }
+.ledger-link { display: inline-block; border: 0; background: transparent; color: var(--ink); text-align: left; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; min-height: 44px; padding: 8px 0; }
+.period-controls { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+.period-controls label { display: grid; gap: 8px; font-family: var(--font-ledger); font-size: 12px; }
+.period-controls select, .period-controls input { min-height: 44px; max-width: 100%; border: 1px solid var(--rule); background: var(--paper-raised); color: var(--ink); padding: 8px; }
+.year-input { width: 110px; }
+.trend { margin: 24px 0; }
+.trend svg { width: 100%; height: auto; }
+.trend-values { margin: 0; font-size: 12px; }
+.trend-values > div { padding: 10px 0; border-top: 1px solid var(--rule-soft); }
+.trend-values dd { margin: 5px 0 0; overflow-wrap: anywhere; }
+.plate > summary { padding: 16px; cursor: pointer; min-height: 44px; font-family: var(--font-ledger); font-size: 12px; }
+.entry-fields { display: flex; flex-direction: column; gap: 20px; border: 0; padding: 0; margin: 0; min-width: 0; }
+form.plate__body { padding: 20px; }
+.history-choice { display: flex; flex-direction: column; gap: 8px; border: 0; border-bottom: 1px solid var(--rule); background: transparent; text-align: left; padding: 14px 4px; min-height: 44px; color: var(--ink); cursor: pointer; overflow-wrap: anywhere; }
+.history-choice strong { font-size: 15px; }
+.export-option { min-height: 44px; display: flex; align-items: center; gap: 12px; }
+.summary__value, .breakdown__amount, .breakdown__total, .cf__value, .txlist__amount { overflow-wrap: anywhere; white-space: normal; min-width: 0; }
+.breakdown__row { grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr); }
+.breakdown__name, .breakdown__amount { min-width: 0; }
+.cf__row { grid-template-columns: 85px minmax(0, 1fr) minmax(80px, 180px); }
+.txlist__head, .txlist__row { grid-template-columns: 80px minmax(0, 1fr) minmax(90px, 160px) 200px; }
+.txlist__actions { opacity: 1; flex-wrap: wrap; }
+.txlist__actions .iconbtn, .sheet__close, .monthnav__btn, .monthnav__today, .btn, .seg__btn { min-height: 44px; min-width: 44px; }
+.txlist__actions .iconbtn { width: 44px; height: 44px; }
+.sheet h2:focus { outline: none; }
+@media (max-width: 900px) {
+  .txlist__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'main amount' 'date date' 'actions actions'; }
+  .txlist__actions { justify-content: flex-end; }
+  .cf__row { grid-template-columns: 72px minmax(0, 1fr) minmax(70px, 125px); }
+  .period-controls > * { min-width: 0; }
+  .period-controls label:first-child { flex: 1; }
+  .sheet__body { overflow-wrap: anywhere; }
+  .form-actions { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+/* History descriptions are previews; full text remains in the DOM and create form. */
+.history-choice > span:last-child:not(:first-child) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 import { createAuthSession } from '../src/lib/auth-session.js';
 import * as format from '../src/lib/format.js';
+import * as ledger from '../src/lib/ledger.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 const deferred = () => {
@@ -154,12 +155,16 @@ function storeHarness() {
     return sandbox.module.exports;
   };
   const helpers = compile('../src/lib/supabase.js', { '@supabase/supabase-js': { createClient: () => null } }, { 'import.meta.env': '{}' });
-  return { Store: compile('../src/lib/store.js', { './format.js': format, './supabase.js': helpers }).Store, cache };
+  return { Store: compile('../src/lib/store.js', { './format.js': format, './supabase.js': helpers, './ledger.js': ledger }).Store, cache };
 }
 
 function fakeCloud({ seedError = null, catsError = null, txError = null, writeError = null, writes = [] } = {}) {
+  let owner;
   return {
-    rpc: async () => ({ error: seedError }),
+    rpc: async (name, args) => {
+      if (name === 'ensure_system_categories') { owner = args.uid; return { error: seedError }; }
+      return { data: { categories: [], transactions: [{ id: 'private-A', user_id: owner, amount: '123', type: 'expense', date: '2026-10-20', category_id: 'expense_food' }], settings: null }, error: catsError || txError };
+    },
     from(table) {
       return {
         select() { return this; }, eq() { return this; }, order() { return this; },
@@ -183,15 +188,16 @@ test('legacy demo migrates and remains separate from cloud persistence', async (
   const { Store, cache } = storeHarness();
   const seed = Store.load();
   seed.data.language = 'en';
+  cache.delete('finanx:demo:v2');
   cache.set('finanx:v1', JSON.stringify(seed.state));
   const demo = Store.load();
   assert.equal(demo.state.language, 'en');
-  assert.equal(cache.has('finanx:v1'), false);
-  const before = cache.get('finanx:demo:v1');
+  assert.equal(cache.has('finanx:v1'), true, 'known demo migration source is preserved');
+  const before = cache.get('finanx:demo:v2');
   const cloud = await Store.loadCloud(fakeCloud(), { id: 'A' });
   cloud.persist();
-  assert.equal(cache.get('finanx:demo:v1'), before);
-  assert.equal(cache.has('finanx:v1'), false);
+  assert.equal(cache.get('finanx:demo:v2'), before);
+  assert.equal(cache.has('finanx:v1'), true);
 });
 
 test('cloud seed and query failures reject instead of creating empty successful data', async () => {
@@ -200,7 +206,7 @@ test('cloud seed and query failures reject instead of creating empty successful 
     const error = new Error(key);
     await assert.rejects(Store.loadCloud(fakeCloud({ [key]: error }), { id: 'A' }), (failure) => {
       assert.equal(failure.code, 'UNKNOWN');
-      assert.equal(failure.stage, { seedError: 'categoriesSeed', catsError: 'categoriesRead', txError: 'transactionsRead' }[key]);
+      assert.equal(failure.stage, { seedError: 'categoriesSeed', catsError: 'snapshotRead', txError: 'snapshotRead' }[key]);
       return true;
     });
   }

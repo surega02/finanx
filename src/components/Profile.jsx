@@ -3,6 +3,7 @@ import { useApp } from '../App.jsx';
 import { Icon } from '../lib/icons.jsx';
 import { shortDate } from '../lib/format.js';
 import { VERSION, COPYRIGHT_YEAR } from '../lib/version.js';
+import FinancialSettings from './FinancialSettings.jsx';
 
 export default function Profile() {
   const { user, store, t, lang, setLang, signOut } = useApp();
@@ -67,6 +68,7 @@ export default function Profile() {
         </div>
       </div>
 
+      <FinancialSettings />
       <div className="profile-actions">
         <button type="button" className="btn btn--ink" onClick={() => signOut()}>
           <Icon name="logout" size={16} />

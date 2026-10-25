@@ -1,3 +1,4 @@
+import { V2 } from './i18n-v2.js';
 export const LANG = {
   id: {
     appName: 'Finanx',
@@ -196,3 +197,6 @@ export const LANG = {
 };
 
 export const LANGUAGES = ['id', 'en'];
+
+Object.assign(LANG.id, V2.id);
+Object.assign(LANG.en, V2.en);

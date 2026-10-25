@@ -5,62 +5,56 @@ import { money, shortDateNoYear, monthName, monthRangeISO } from '../lib/format.
 import Stamp from './Stamp.jsx';
 import Toast from './Toast.jsx';
 import TransactionSheet from './TransactionSheet.jsx';
+import ExportSheet from './ExportSheet.jsx';
+import { filterHistory } from '../lib/ledger.js';
+import { routeURL, safeReturn } from '../lib/navigation.js';
 
 const PAGE_SIZE = 10;
 const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
 
 export default function Transactions() {
-  const { store, t, lang, setSheet, pushToast, month, currentMonth } = useApp();
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [monthFilter, setMonthFilter] = useState(() => String(currentMonth.monthIndex));
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
+  const { store, t, lang, setSheet, pushToast, navigation, navigate, revision } = useApp();
+  const [exporting, setExporting] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const { type: typeFilter, category: categoryFilter, month: monthValue, year, q: query, page } = navigation;
+  const monthFilter = monthValue === 'all' ? 'all' : String(monthValue - 1);
+  const change = (patch, pagination = false) => navigate(routeURL('transactions', { ...navigation, ...patch, page: pagination ? patch.page : 1, view: undefined }), true);
+  const setTypeFilter = type => change({ type });
+  const setCategoryFilter = category => change({ category });
+  const setMonthFilter = month => change({ month: month === 'all' ? 'all' : Number(month) + 1 });
+  const setQuery = q => change({ q });
+  const setPage = page => change({ page }, true);
 
-  const categories = store.listActiveCategories();
-
-  useEffect(() => {
-    setPage(1);
-  }, [typeFilter, categoryFilter, monthFilter, query]);
+  const categories = store.state.categories;
 
   const filtered = useMemo(() => {
-    let rows = store.listActiveTransactions();
-
-    if (monthFilter !== 'all') {
-      const { start, end } = monthRangeISO(currentMonth.year, Number(monthFilter));
-      rows = rows.filter((x) => x.date >= start && x.date < end);
-    }
-
-    if (typeFilter !== 'all') rows = rows.filter((x) => x.type === typeFilter);
-    if (categoryFilter !== 'all') rows = rows.filter((x) => x.category.id === categoryFilter);
-
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      rows = rows.filter((x) =>
-        (x.description || '').toLowerCase().includes(q) ||
-        x.category.name.toLowerCase().includes(q)
-      );
-    }
-
-    return [...rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.created_at.localeCompare(a.created_at)));
-  }, [store, typeFilter, categoryFilter, monthFilter, query, currentMonth]);
+    return filterHistory(store.state.transactions, { year, month: monthValue, type: typeFilter, category: categoryFilter, q: query }, categories, lang);
+  }, [store, revision, typeFilter, categoryFilter, monthValue, year, query, lang]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const rows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const handleDelete = (tx) => {
-    store.softDeleteTransaction(tx.id);
-    pushToast(t.deleted, t.undo, () => {
-      store.undoDeleteTransaction(tx.id);
-    });
+  const handleDelete = async (tx) => {
+    if (busyId) return;
+    setBusyId(tx.id);
+    try {
+      await store.softDeleteTransaction(tx.id);
+      pushToast(t.deleted, t.undo, async () => {
+        try { await store.undoDeleteTransaction(tx.id); }
+        catch { pushToast(t.mutationFailed); }
+      });
+    } catch { pushToast(t.mutationFailed); }
+    finally { setBusyId(null); }
   };
 
   return (
     <>
       <h1 className="page-title">{t.transactions}</h1>
+      <div className="period-controls">{safeReturn(navigation.return) && <button className="btn btn--ghost" onClick={() => navigate(safeReturn(navigation.return))}>{t.backDashboard}</button>}<button className="btn btn--ghost" onClick={() => setExporting(true)}>{t.exportData}</button></div>
 
       <div className="filters" role="search">
+        <label>{t.year}<input key={year} type="number" className="input year-input" aria-label={t.year} min="1" max="9999" defaultValue={year} onBlur={e => { const y = Number(e.target.value); if (Number.isInteger(y) && y >= 1 && y <= 9999) change({ year: y }); else e.target.value = year; }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label>
         <div className="seg" role="group" aria-label={t.typeFilter}>
           <button
             type="button"
@@ -91,7 +85,7 @@ export default function Transactions() {
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
           >
-            <option value="all">{t.all}</option>
+            <option value="all">{t.allMonths}</option>
             {MONTH_INDEXES.map((monthIndex) => (
               <option key={monthIndex} value={monthIndex}>
                 {monthName(monthIndex, lang)}
@@ -109,7 +103,7 @@ export default function Transactions() {
             <option value="all">{t.allCategories}</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
-                {store.categoryName(c, lang)}
+                {store.categoryName(c, lang)}{c.deleted_at ? ` · ${t.historical}` : ''}
               </option>
             ))}
           </select>
@@ -168,10 +162,12 @@ export default function Transactions() {
                   {money(tx.amount)}
                 </div>
                 <div className="txlist__actions">
+                  <button type="button" disabled={!!busyId} className="btn btn--ghost btn--sm" onClick={() => setSheet({ mode: 'reuse', tx })}>{t.repeat}</button>
                   <button
                     type="button"
                     className="iconbtn"
                     aria-label={t.editThis}
+                    disabled={!!busyId}
                     onClick={() => setSheet({ mode: 'edit', tx })}
                   >
                     <Icon name="pencil" size={16} />
@@ -180,6 +176,7 @@ export default function Transactions() {
                     type="button"
                     className="iconbtn iconbtn--danger"
                     aria-label={t.deleteThis}
+                    disabled={!!busyId}
                     onClick={() => handleDelete(tx)}
                   >
                     <Icon name="trash" size={16} />
@@ -221,6 +218,7 @@ export default function Transactions() {
 
       <Toast />
       <TransactionSheet />
+      {exporting && <ExportSheet filters={{ year, month: monthValue, type: typeFilter, category: categoryFilter, q: query }} summary={`${year} · ${monthValue === 'all' ? t.allMonths : monthName(monthValue - 1, lang)} · ${t[typeFilter] || t.all} · ${categoryFilter === 'all' ? t.allCategories : store.categoryName(categories.find(c => c.id === categoryFilter), lang)} · ${query}`} onClose={() => setExporting(false)} />}
     </>
   );
 }

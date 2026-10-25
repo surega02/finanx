@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { parseNavigation, routeURL } from './lib/navigation.js';
 import { Store, currentMonth } from './lib/store.js';
 import { LANG, LANGUAGES } from './lib/i18n.js';
 import { supabase, isCloudEnabled, appUserFromAuth } from './lib/supabase.js';
@@ -14,19 +15,36 @@ export function useApp() {
 
 export default function App() {
   const [demoStore] = useState(() => {
-    if (!isCloudEnabled) return Store.load();
+    if (!isCloudEnabled) {
+      try { return Store.load(); } catch { const empty = Store.empty(); empty.migrationFailed = true; return empty; }
+    }
     Store.clearLegacyCache();
     return Store.empty();
   });
   const [demoUser, setDemoUser] = useState(null);
   const [authState, setAuthState] = useState({ status: 'loading', store: null, user: null, error: null });
   const auth = useRef(null);
+  const lastOwner = useRef(null);
   const store = isCloudEnabled ? authState.store || demoStore : demoStore;
   const user = isCloudEnabled ? (authState.status === 'ready' ? appUserFromAuth(authState.user) : null) : demoUser;
   const setUser = isCloudEnabled ? undefined : setDemoUser;
   const [lang, setLangState] = useState(() => store.state.language || 'id');
-  const [view, setView] = useState('dashboard');
-  const [month, setMonth] = useState(() => currentMonth());
+  const [url, setURL] = useState(() => window.location.search);
+  const navigation = parseNavigation(url, store.state.categories);
+  const view = navigation.view;
+  const month = { year: navigation.year, monthIndex: navigation.month === 'all' ? currentMonth().monthIndex : navigation.month - 1 };
+  const revision = useSyncExternalStore(store.subscribe, () => store.revision);
+  const navigate = (target, replace = false) => {
+    window.history[replace ? 'replaceState' : 'pushState']({}, '', target);
+    setURL(window.location.search);
+  };
+  const setView = (next) => navigate(routeURL(next));
+  const setMonth = (next) => navigate(routeURL('dashboard', { year: next.year, month: next.monthIndex + 1 }));
+  useEffect(() => {
+    const pop = () => setURL(window.location.search);
+    window.addEventListener('popstate', pop);
+    return () => window.removeEventListener('popstate', pop);
+  }, []);
   const [sheet, setSheet] = useState(null); // { mode: 'add' | 'edit', tx: null | {...} }
   const [toast, setToast] = useState(null);
   const [booting, setBooting] = useState(true);
@@ -42,12 +60,19 @@ export default function App() {
       loadStore: Store.loadCloud,
       onChange: (next) => {
         setAuthState(next);
-        if (next.status === 'ready') setLangState(next.store.state.language || 'id');
+        if (next.status === 'ready') {
+          lastOwner.current = next.user.id;
+          setLangState(next.store.state.language || 'id');
+        }
         else {
           setSheet(null);
           setToast(null);
-          setView('dashboard');
-          setMonth(currentMonth());
+          // Initial cloud hydration must retain shared/refreshed URL filters.
+          // Identity replacement and sign-out reset account-specific context.
+          if (next.status === 'signedOut' || next.error === 'logoutFailed' ||
+              lastOwner.current && next.user?.id && lastOwner.current !== next.user.id) {
+            navigate(routeURL('dashboard'), true);
+          }
         }
       },
     });
@@ -83,6 +108,9 @@ export default function App() {
 
   const value = {
     store,
+    revision,
+    navigation,
+    navigate,
     t,
     lang,
     setLang,
@@ -103,7 +131,9 @@ export default function App() {
 
   return (
     <AppContext.Provider value={value}>
-      {(isCloudEnabled ? authState.status === 'loading' : booting) ? (
+      {demoStore.migrationFailed ? (
+        <div className="loading" role="alert"><p>{t.demoMigrationFailed}</p><button className="btn btn--ghost" onClick={() => window.location.reload()}>{t.retry}</button></div>
+      ) : (isCloudEnabled ? authState.status === 'loading' : booting) ? (
         <div className="loading" role="status">
           <div className="loading__stamp"><span>F</span></div>
           <p className="loading__text">{t.loading}</p>

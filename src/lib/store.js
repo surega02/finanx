@@ -1,5 +1,6 @@
 import { todayISO, monthRangeISO } from './format.js';
 import { appUserFromAuth, txToRow, catToRow, profileRow, rowToTx, rowToCat } from './supabase.js';
+import { migrateDemo, emptySettings, validateSettings, integer, validDate, totals } from './ledger.js';
 
 const SYSTEM_CATEGORIES = [
   { id: 'income_salary', type: 'income', name: 'Salary', nameId: 'Gaji', icon: 'wallet', source: 'system' },
@@ -84,7 +85,8 @@ const SEED = [
   deleted_at: null,
 }));
 
-const KEY = 'finanx:demo:v1';
+const KEY = 'finanx:demo:v2';
+const V1_KEY = 'finanx:demo:v1';
 const LEGACY_KEY = 'finanx:v1';
 
 function makeTimestamp() {
@@ -108,6 +110,8 @@ export function seedData() {
     transactions: SEED,
     categories: [...SYSTEM_CATEGORIES, ...CUSTOM_CATEGORIES],
     language: 'id',
+    schemaVersion: 2,
+    financialSettings: emptySettings(),
   };
 }
 
@@ -131,6 +135,9 @@ export class Store {
     this._userId = opts.userId || null;
     this._transient = !!opts.transient;
     this._inactive = false;
+    this.revision = 0;
+    this.listeners = new Set();
+    this.pendingCreates = new Map();
   }
 
   static empty() {
@@ -138,28 +145,26 @@ export class Store {
   }
 
   static clearLegacyCache() {
-    try { localStorage.removeItem(LEGACY_KEY); } catch { /* storage unavailable */ }
+    try {
+      const raw = localStorage.getItem(LEGACY_KEY);
+      if (raw && JSON.parse(raw).user?.uid !== 'demo-uid') localStorage.removeItem(LEGACY_KEY);
+    } catch { /* preserve unreadable sources for recovery */ }
   }
 
   static load() {
     try {
-      // Only migrate known demo data. Cloud identities must never enter demo storage.
-      const legacy = localStorage.getItem(LEGACY_KEY);
       Store.clearLegacyCache();
-      if (legacy && !localStorage.getItem(KEY)) {
-        const data = JSON.parse(legacy);
-        if (data.user?.uid === 'demo-uid') localStorage.setItem(KEY, legacy);
-      }
       const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        if (data.user?.uid === 'demo-uid') return new Store(data);
-        localStorage.removeItem(KEY);
-      }
-    } catch {
-      /* fresh start */
+      if (raw) return new Store(migrateDemo(JSON.parse(raw)));
+      const source = localStorage.getItem(V1_KEY) || localStorage.getItem(LEGACY_KEY);
+      const data = source ? migrateDemo(JSON.parse(source)) : seedData();
+      const encoded = JSON.stringify(data);
+      localStorage.setItem(KEY, encoded);
+      if (localStorage.getItem(KEY) !== encoded) throw new Error('storage');
+      return new Store(data);
+    } catch (cause) {
+      throw new Error('demoMigrationFailed', { cause });
     }
-    return new Store(seedData());
   }
 
   static async loadCloud(supabase, authUser) {
@@ -183,23 +188,56 @@ export class Store {
       }
     }
 
-    const [catsRes, txRes] = await Promise.all([
-      supabase.from('categories').select('*').eq('user_id', uid),
-      supabase.from('transactions').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
-    ]);
-    if (catsRes.error) throw cloudError('categoriesRead', catsRes.error);
-    if (txRes.error) throw cloudError('transactionsRead', txRes.error);
-    if (!Array.isArray(catsRes.data) || !Array.isArray(txRes.data)) {
-      throw new Error('Invalid cloud data response');
-    }
-    const cats = (catsRes.data || []).map(rowToCat);
-    const lookup = new Map((catsRes.data || []).map((r) => [r.id, rowToCat(r)]));
-    const transactions = (txRes.data || []).map((r) => rowToTx(r, lookup));
-
-    store.data = deepClone({ user, transactions, categories: cats, language: 'id' });
+    const snapshot = await Store.readSnapshot(supabase, uid);
+    store.data = deepClone({ user, ...snapshot, language: 'id', schemaVersion: 2 });
     store._supabase = supabase;
     store._userId = uid;
     return store;
+  }
+
+  static async readSnapshot(client, uid) {
+    const result = await client.rpc('ledger_snapshot_v2');
+    if (result.error) throw cloudError('snapshotRead', result.error);
+    const data = result.data;
+    if (!Array.isArray(data?.categories) || !Array.isArray(data?.transactions)) throw new Error('Invalid snapshot');
+    if ([...data.categories, ...data.transactions].some(r => r.user_id !== uid) || data.settings && data.settings.user_id !== uid) throw new Error('ownership');
+    const categories = data.categories.map(rowToCat);
+    const lookup = new Map(categories.map(c => [c.id, c]));
+    const financialSettings = data.settings ? { openingBalanceAmount: data.settings.opening_balance_amount, openingBalanceDate: data.settings.opening_balance_date } : emptySettings();
+    validateSettings(financialSettings);
+    const transactions = data.transactions.map(r => rowToTx(r, lookup));
+    for (const tx of transactions) integer(tx.amount);
+    return { categories, transactions, financialSettings };
+  }
+
+  subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
+  notify() { this.revision++; for (const listener of this.listeners) listener(); }
+
+  async exportSnapshot() {
+    this.assertActive();
+    const snapshot = this._supabase ? await Store.readSnapshot(this._supabase, this._userId) : deepClone(this.data);
+    this.assertActive();
+    return snapshot;
+  }
+
+  assertActive() { if (this._inactive) throw new Error('inactive'); }
+
+  async setFinancialSettings(settings) {
+    this.assertActive();
+    validateSettings(settings);
+    if (this._supabase) {
+      const result = await this._supabase.from('financial_settings').upsert({ user_id: this._userId, opening_balance_amount: settings.openingBalanceAmount, opening_balance_date: settings.openingBalanceDate }, { onConflict: 'user_id' }).select('user_id');
+      if (result.error || result.data?.length !== 1) throw new Error('saveFailed');
+      this.assertActive();
+    }
+    this.commit({ ...this.data, financialSettings: deepClone(settings) });
+  }
+
+  commit(next) {
+    this.assertActive();
+    if (!this._supabase && !this._transient) localStorage.setItem(KEY, JSON.stringify(next));
+    this.data = next;
+    this.notify();
   }
 
   deactivate() {
@@ -208,12 +246,9 @@ export class Store {
   }
 
   persist() {
+    this.notify();
     if (this._supabase || this._transient || this._inactive) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(this.data));
-    } catch {
-      /* storage unavailable */
-    }
+    try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch { /* V1 category/language persistence behavior; transaction and settings commits fail explicitly. */ }
   }
 
   _push(table, rows) {
@@ -267,6 +302,45 @@ export class Store {
     return tx;
   }
 
+  async saveTransaction(draft, id, editing = false) {
+    this.assertActive();
+    if (this.pendingCreates.has(id)) return this.pendingCreates.get(id);
+    const operation = this._saveTransaction(draft, id, editing);
+    this.pendingCreates.set(id, operation);
+    try { return await operation; } finally { this.pendingCreates.delete(id); }
+  }
+
+  async _saveTransaction({ type, amount, date, category, description }, id, editing) {
+    if (!['income', 'expense'].includes(type) || integer(amount) <= 0n || !validDate(date)) throw new Error('validation');
+    const validCategory = this.categoriesFor(type).find(c => c.id === category?.id);
+    if (!validCategory) throw new Error('category');
+    const existing = this.data.transactions.find(t => t.id === id);
+    const now = makeTimestamp();
+    const snapshot = { id: validCategory.id, source: validCategory.source, name: validCategory.name, nameId: validCategory.nameId, icon: validCategory.icon };
+    let tx = { id, type, amount, date, category: snapshot, description: description.trim(), created_at: existing?.created_at || now, updated_at: now, deleted_at: null };
+    if (this._supabase) {
+      // Check the same ID before every create retry; never overwrite a prior intent.
+      const query = () => this._supabase.from('transactions').select('id,type,amount::text,date,category_id,description,created_at,updated_at,deleted_at').eq('user_id', this._userId).eq('id', id).maybeSingle();
+      let found = editing ? null : await query();
+      if (found?.error) throw new Error('saveFailed');
+      if (!found?.data) {
+        const payload = txToRow(tx, this._userId);
+        const result = editing
+          ? await this._supabase.from('transactions').update(payload).eq('user_id', this._userId).eq('id', id).select('id')
+          : await this._supabase.from('transactions').upsert(payload, { onConflict: 'user_id,id', ignoreDuplicates: true });
+        if (editing && (result.error || result.data?.length !== 1)) throw new Error('saveFailed');
+        found = await query();
+        if (found.error || !found.data) throw new Error('saveFailed');
+      }
+      this.assertActive();
+      tx = rowToTx(found.data, new Map(this.data.categories.map(c => [c.id, c])));
+      // Outcome already committed but draft edited before retry: do not silently discard edits.
+      if (tx.type !== type || integer(tx.amount) !== integer(amount) || tx.date !== date || tx.category.id !== category.id || tx.description !== description.trim() || tx.deleted_at) throw new Error('intentConflict');
+    }
+    this.commit({ ...this.data, transactions: [tx, ...this.data.transactions.filter(t => t.id !== id)] });
+    return tx;
+  }
+
   updateTransaction(id, patch) {
     const tx = this.data.transactions.find((t) => t.id === id);
     if (!tx) return;
@@ -285,21 +359,24 @@ export class Store {
   }
 
   softDeleteTransaction(id) {
-    const tx = this.data.transactions.find((t) => t.id === id);
-    if (!tx) return;
-    tx.deleted_at = makeTimestamp();
-    tx.updated_at = makeTimestamp();
-    this.persist();
-    if (this._supabase) this._push('transactions', txToRow(tx, this._userId));
+    return this.setTransactionDeletion(id, makeTimestamp());
   }
 
   undoDeleteTransaction(id) {
+    return this.setTransactionDeletion(id, null);
+  }
+
+  async setTransactionDeletion(id, deleted_at) {
+    this.assertActive();
     const tx = this.data.transactions.find((t) => t.id === id);
     if (!tx) return;
-    tx.deleted_at = null;
-    tx.updated_at = makeTimestamp();
-    this.persist();
-    if (this._supabase) this._push('transactions', txToRow(tx, this._userId));
+    const patch = { deleted_at, updated_at: makeTimestamp() };
+    if (this._supabase) {
+      const result = await this._supabase.from('transactions').update(patch).eq('user_id', this._userId).eq('id', id).select('id');
+      if (result.error || result.data?.length !== 1) throw new Error('saveFailed');
+      this.assertActive();
+    }
+    this.commit({ ...this.data, transactions: this.data.transactions.map(t => t.id === id ? { ...t, ...patch } : t) });
   }
 
   addCategory({ name, type, icon }) {
@@ -336,45 +413,39 @@ export class Store {
 
   summaryForMonth(year, monthIndex) {
     const { start, end } = monthRangeISO(year, monthIndex);
-    const rows = this.listActiveTransactions().filter((t) => t.date >= start && t.date < end);
-    let income = 0;
-    let expense = 0;
-    const byIncome = {};
-    const byExpense = {};
-    for (const t of rows) {
-      if (t.type === 'income') {
-        income += t.amount;
-        byIncome[t.category.id] = (byIncome[t.category.id] || 0) + t.amount;
-      } else {
-        expense += t.amount;
-        byExpense[t.category.id] = (byExpense[t.category.id] || 0) + t.amount;
-      }
-    }
-    return { rows, income, expense, balance: income - expense, byIncome, byExpense };
+    return totals(this.data.transactions, start, end);
   }
 
   categoryTotals(map) {
-    const cats = this.listActiveCategories();
-    const lookup = new Map(cats.map((c) => [c.id, c]));
+    if (this._categoryRevision !== this.revision) {
+      this._categoryLookup = new Map(this.data.categories.map(c => [c.id, c]));
+      for (const tx of this.data.transactions) if (!this._categoryLookup.has(tx.category.id)) this._categoryLookup.set(tx.category.id, tx.category);
+      this._categoryRevision = this.revision;
+    }
+    const lookup = this._categoryLookup;
     return Object.entries(map)
       .map(([id, total]) => ({ category: lookup.get(id), total }))
       .filter((x) => x.category)
-      .sort((a, b) => b.total - a.total);
+      .sort((a, b) => a.total < b.total ? 1 : a.total > b.total ? -1 : 0);
   }
 
   counterforceMax() {
+    if (this._maxRevision === this.revision) return this._maxAmount;
     const totals = new Map();
     for (const t of this.listActiveTransactions()) {
       const key = t.date.slice(0, 7);
-      const cur = totals.get(key) || { income: 0, expense: 0 };
-      if (t.type === 'income') cur.income += t.amount;
-      else cur.expense += t.amount;
+      const cur = totals.get(key) || { income: 0n, expense: 0n };
+      if (t.type === 'income') cur.income += integer(t.amount);
+      else cur.expense += integer(t.amount);
       totals.set(key, cur);
     }
-    let max = 1;
+    let max = 1n;
     for (const { income, expense } of totals.values()) {
-      max = Math.max(max, income, expense);
+      if (income > max) max = income;
+      if (expense > max) max = expense;
     }
+    this._maxRevision = this.revision;
+    this._maxAmount = max;
     return max;
   }
 }

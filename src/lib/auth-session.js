@@ -35,7 +35,7 @@ export function createAuthSession({ client, loadStore, onChange }) {
         publish({ status: 'ready', user: state.user, store, error: null });
       } catch (error) {
         if (!stopped && ticket === generation) {
-          const stages = ['categoriesSeed', 'categoriesRead', 'transactionsRead'];
+          const stages = ['categoriesSeed', 'categoriesRead', 'transactionsRead', 'snapshotRead'];
           const diagnostic = {
             stage: stages.includes(error?.stage) ? error.stage : 'accountLoad',
             code: /^[A-Z0-9]{4,12}$/.test(error?.code || '') ? error.code : 'UNKNOWN',
