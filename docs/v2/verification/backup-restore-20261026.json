@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-26",
+  "backup": "finanx-v1-20261026-100031.dump",
+  "archiveBytes": 19840,
+  "sourceDatabaseVersion": "17.6",
+  "localPostgresVersion": "17.10",
+  "scope": "public schema backup, local restore and V2 migration rehearsal only",
+  "authScope": "auth.users IDs reconstructed as placeholders; Auth accounts, tokens, OAuth and grants NOT restored",
+  "checks": {
+    "all_v1_rows_unchanged": true,
+    "restored_v1_tables": 3,
+    "all_v1_constraints_valid": true,
+    "rls_enabled_for_four_tables": true,
+    "v2_settings_empty": true,
+    "v2_snapshot_available": true,
+    "v2_snapshot_invoker": true
+  },
+  "productionModified": false,
+  "personalRowsPrinted": false
+}

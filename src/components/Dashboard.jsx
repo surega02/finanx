@@ -134,10 +134,6 @@ export default function Dashboard() {
         </span>
       </div>
 
-      <div className="period-controls">
-        <label>{t.month}<select aria-label={t.period} value={monthIndex} onChange={e => setMonth({ year, monthIndex: Number(e.target.value) })}>{Array.from({ length: 12 }, (_, m) => <option key={m} value={m}>{monthLabel(year, m, lang)}</option>)}</select></label>
-        <label>{t.year}<input key={year} aria-label={t.year} type="number" min="1" max="9999" defaultValue={year} onBlur={e => { const y = Number(e.target.value); if (Number.isInteger(y) && y >= 1 && y <= 9999) setMonth({ year: y, monthIndex }); else e.target.value = year; }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label>
-      </div>
       {(data.current || data.future) && <p className="ledger-note">{data.future ? t.futurePeriod : t.provisional}</p>}
 
       {isCurrent && (

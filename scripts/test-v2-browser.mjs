@@ -6,6 +6,7 @@ import puppeteer from 'puppeteer-core';
 import { buildSync } from 'esbuild';
 
 const base = 'http://127.0.0.1:5176';
+const uiOnly = process.argv.includes('--ui-only');
 const out = path.resolve('.impeccable/review');
 fs.mkdirSync(out, { recursive: true });
 execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', '.impeccable/review/demo-dist'], { env: { ...process.env, VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' }, windowsHide: true });
@@ -28,12 +29,17 @@ const textClick = async (page, selector, text) => {
   }, text);
   assert.ok(clicked, `button ${text}`);
 };
+const transactionAction = async (page, text) => {
+  await page.click('.tx-actions-trigger');
+  await page.waitForSelector('.tx-actions-menu');
+  await textClick(page, '.tx-actions-menu button', text);
+};
 const login = async page => { await page.waitForSelector('.login__google'); await page.click('.login__google'); await page.waitForSelector('.surface'); };
 const render = page => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
-const capture = async (page, name) => {
+const capture = async (page, name, fullPage = true) => {
   await page.evaluate(() => document.fonts.ready);
   await new Promise(r => setTimeout(r, 350));
-  await page.screenshot({ path: path.join(out, name), fullPage: true });
+  await page.screenshot({ path: path.join(out, name), fullPage });
 };
 try {
   await new Promise((resolve, reject) => {
@@ -53,6 +59,10 @@ try {
     check(`${width} six exact trend values`, await page.$$eval('.trend-values > div', els => els.length === 6));
     check(`${width} monthly summary three cells`, await page.$$eval('.summary__cell', els => els.length === 3));
     check(`${width} dashboard no horizontal scroll`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    check(`${width} dashboard direct period pickers removed`, await page.$$eval('.period-controls input, .period-controls select', els => els.length === 0));
+    await page.click('.monthnav__btn[aria-label="Berikutnya"]'); await render(page);
+    check(`${width} dashboard next month still works`, await page.evaluate(() => new URLSearchParams(location.search).get('month') === '1' && new URLSearchParams(location.search).get('year') === '2026'));
+    await page.click('.monthnav__btn[aria-label="Sebelumnya"]'); await render(page);
     await capture(page, `v2-${width}.png`);
     await textClick(page, '.summary .ledger-link', 'Lihat transaksi'); await page.waitForSelector('.filters');
     check(`${width} drill-down period/type`, await page.evaluate(() => { const p = new URLSearchParams(location.search); return p.get('year') === '2025' && p.get('month') === '12' && p.get('type') === 'income'; }));
@@ -72,25 +82,36 @@ try {
     await page.keyboard.press('Escape'); await textClick(page, '.sheet button', 'Buang Perubahan'); await page.waitForSelector('.sheet', { hidden: true });
     const nav = width === 360 ? '.tabbar__item' : '.nav__item';
     await textClick(page, nav, 'Transaksi'); await page.waitForSelector('.txlist__row');
-    await textClick(page, '.txlist__actions button', 'Catat Lagi'); await page.waitForSelector('#tx-amount');
+    await page.click('.tx-actions-trigger'); await page.waitForSelector('.tx-actions-menu');
+    check(`${width} one trigger groups all three actions`, await page.$$eval('.tx-actions-menu [role="menuitem"]', els => els.map(el => el.textContent.trim()).join('|') === 'Catat Lagi|Ubah|Hapus'));
+    check(`${width} menu fits viewport and touch targets`, await page.$eval('.tx-actions-menu', el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && [...el.children].every(item => item.getBoundingClientRect().height >= 44); }));
+    await capture(page, `actions-menu-${width}.png`, false);
+    await page.keyboard.press('ArrowUp');
+    check(`${width} menu keyboard wraps`, await page.evaluate(() => document.activeElement.textContent.trim() === 'Hapus'));
+    await page.keyboard.press('Escape');
+    check(`${width} Escape restores action trigger`, await page.evaluate(() => !document.querySelector('.tx-actions-menu') && document.activeElement.matches('.tx-actions-trigger')));
+    await page.keyboard.press('ArrowDown'); await page.waitForSelector('.tx-actions-menu');
+    await page.click('.page-title');
+    check(`${width} outside click dismisses menu`, await page.$('.tx-actions-menu') === null);
+    await transactionAction(page, 'Catat Lagi'); await page.waitForSelector('#tx-amount');
     const original = await page.$eval('#tx-amount', el => el.value);
     check(`${width} reuse prefilled`, Number(original) > 0);
     await capture(page, `entry-${width}.png`);
     await page.keyboard.press('Escape'); await page.waitForSelector('.sheet', { hidden: true });
-    await textClick(page, '.txlist__actions button', 'Catat Lagi'); await page.waitForSelector('#tx-amount');
+    await transactionAction(page, 'Catat Lagi'); await page.waitForSelector('#tx-amount');
     await fill(page, '#tx-desc', 'V2 browser acceptance');
     const before = await page.evaluate(() => JSON.parse(localStorage.getItem('finanx:demo:v2')).transactions.length);
     await textClick(page, '.sheet button', 'Catat'); await page.waitForSelector('.sheet', { hidden: true });
     check(`${width} reuse creates exactly one new transaction`, await page.evaluate(before => JSON.parse(localStorage.getItem('finanx:demo:v2')).transactions.length === before + 1, before));
     await fill(page, '.search input', 'V2 browser acceptance'); await render(page);
     check(`${width} search resets pagination and finds saved row`, await page.$$eval('.txlist__row', els => els.length === 1));
-    await page.click('.txlist__actions [aria-label="Ubah"]'); await page.waitForSelector('#tx-amount');
+    await transactionAction(page, 'Ubah'); await page.waitForSelector('#tx-amount');
     await fill(page, '#tx-amount', '54321'); await fill(page, '#tx-date', '2027-01-05');
     await textClick(page, '.sheet button', 'Simpan perubahan'); await page.waitForSelector('.sheet', { hidden: true });
     check(`${width} future edit leaves old period`, await page.$$eval('.txlist__row', els => els.length === 0));
     await fill(page, '[aria-label="Tahun"]', '2027'); await page.$eval('[aria-label="Tahun"]', el => el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
     await page.select('[aria-label="Bulan"]', '0'); await page.waitForSelector('.txlist__row');
-    await page.click('.txlist__actions [aria-label="Hapus"]'); await render(page);
+    await transactionAction(page, 'Hapus'); await render(page);
     check(`${width} V1 delete updates filtered list`, await page.$$eval('.txlist__row', els => els.length === 0));
     await textClick(page, '.toast button', 'Urungkan'); await page.waitForSelector('.txlist__row');
     check(`${width} V1 undo restores edited amount`, await page.$eval('.txlist__amount', el => el.textContent.includes('54.321')));
@@ -121,6 +142,7 @@ try {
     check(`${width} explicit zero and future opening saved`, await page.evaluate(() => JSON.parse(localStorage.getItem('finanx:demo:v2')).financialSettings.openingBalanceAmount === '0'));
     await textClick(page, '.plate button', 'Reset saldo awal'); await textClick(page, '.plate button', 'Batal');
     check(`${width} reset cancel preserves settings`, await page.evaluate(() => JSON.parse(localStorage.getItem('finanx:demo:v2')).financialSettings.openingBalanceAmount === '0'));
+    check(`${width} opening buttons side by side`, await page.$$eval('.financial-settings__actions button', els => { const [a, b] = els.map(el => el.getBoundingClientRect()); return els.length === 2 && Math.abs(a.top - b.top) < 1 && a.right <= b.left && a.height >= 44 && b.height >= 44; }));
     await capture(page, `settings-${width}.png`);
     await textClick(page, '.lang-pick__btn', 'English');
     check(`${width} new controls localized`, await page.$$eval('h2', els => els.some(el => el.textContent.includes('Financial Settings'))));
@@ -132,7 +154,7 @@ try {
   }
 
   const benchmarks = [];
-  for (const mobile of [false, true]) {
+  for (const mobile of (uiOnly ? [] : [false, true])) {
     const page = await browser.newPage();
     await page.setViewport({ width: mobile ? 360 : 1440, height: 900, isMobile: mobile, hasTouch: mobile });
     const cdp = await page.createCDPSession();
@@ -196,7 +218,7 @@ try {
     result.context = mobile ? 'desktop Chrome, mobile viewport, CPU 4x (proxy only; NOT physical Android)' : 'desktop Chrome';
     console.log(JSON.stringify(result));
     benchmarks.push(result);
-    fs.writeFileSync(path.join(out, 'v2-browser-results.json'), JSON.stringify({ checks: results, errors, benchmarks }, null, 2));
+    fs.writeFileSync(path.join(out, uiOnly ? 'mobile-ui-results.json' : 'v2-browser-results.json'), JSON.stringify({ checks: results, errors, benchmarks }, null, 2));
     check(`${result.context} computation performance targets`, result.dashboardP95 <= 500 && result.historyP95 <= 500 && result.pickerP95 <= 300);
     check(`${result.context} Dashboard render <=500ms`, result.dashboardRenderP95 <= 500);
     check(`${result.context} history render <=500ms`, result.historyRenderP95 <= 500);
@@ -205,6 +227,6 @@ try {
     await page.close();
   }
   check('no uncaught browser errors', errors.length === 0);
-  fs.writeFileSync(path.join(out, 'v2-browser-results.json'), JSON.stringify({ checks: results, errors, benchmarks }, null, 2));
+  fs.writeFileSync(path.join(out, uiOnly ? 'mobile-ui-results.json' : 'v2-browser-results.json'), JSON.stringify({ checks: results, errors, benchmarks }, null, 2));
   console.log(JSON.stringify(benchmarks, null, 2));
 } finally { if (browser) await browser.close(); server.kill(); }

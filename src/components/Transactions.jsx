@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../App.jsx';
 import { Icon } from '../lib/icons.jsx';
 import { money, shortDateNoYear, monthName, monthRangeISO } from '../lib/format.js';
@@ -6,6 +6,7 @@ import Stamp from './Stamp.jsx';
 import Toast from './Toast.jsx';
 import TransactionSheet from './TransactionSheet.jsx';
 import ExportSheet from './ExportSheet.jsx';
+import TransactionActions from './TransactionActions.jsx';
 import { filterHistory } from '../lib/ledger.js';
 import { routeURL, safeReturn } from '../lib/navigation.js';
 
@@ -162,25 +163,8 @@ export default function Transactions() {
                   {money(tx.amount)}
                 </div>
                 <div className="txlist__actions">
-                  <button type="button" disabled={!!busyId} className="btn btn--ghost btn--sm" onClick={() => setSheet({ mode: 'reuse', tx })}>{t.repeat}</button>
-                  <button
-                    type="button"
-                    className="iconbtn"
-                    aria-label={t.editThis}
-                    disabled={!!busyId}
-                    onClick={() => setSheet({ mode: 'edit', tx })}
-                  >
-                    <Icon name="pencil" size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="iconbtn iconbtn--danger"
-                    aria-label={t.deleteThis}
-                    disabled={!!busyId}
-                    onClick={() => handleDelete(tx)}
-                  >
-                    <Icon name="trash" size={16} />
-                  </button>
+                  <TransactionActions t={t} label={`${store.categoryName(tx.category, lang)}, ${shortDateNoYear(tx.date, lang)}, ${money(tx.amount)}`} disabled={!!busyId}
+                    onReuse={() => setSheet({ mode: 'reuse', tx })} onEdit={() => setSheet({ mode: 'edit', tx })} onDelete={() => handleDelete(tx)} />
                 </div>
               </div>
             );

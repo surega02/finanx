@@ -1,12 +1,12 @@
-import React from 'react';
-import { Icon } from '../lib/icons.jsx';
-import { useApp } from '../App.jsx';
-import { isCloudEnabled } from '../lib/supabase.js';
-import logo from '../assets/logo.png';
-import Dashboard from './Dashboard.jsx';
-import Transactions from './Transactions.jsx';
-import Categories from './Categories.jsx';
-import Profile from './Profile.jsx';
+import React from "react";
+import {Icon} from "../lib/icons.jsx";
+import {useApp} from "../App.jsx";
+import {isCloudEnabled} from "../lib/supabase.js";
+import logo from "../assets/logo.png";
+import Dashboard from "./Dashboard.jsx";
+import Transactions from "./Transactions.jsx";
+import Categories from "./Categories.jsx";
+import Profile from "./Profile.jsx";
 
 function Mark() {
   return (
@@ -17,27 +17,27 @@ function Mark() {
 }
 
 const NAV = [
-  { id: 'dashboard', icon: 'home' },
-  { id: 'transactions', icon: 'list' },
-  { id: 'categories', icon: 'tag' },
-  { id: 'profile', icon: 'user' },
+  {id: "dashboard", icon: "home"},
+  {id: "transactions", icon: "list"},
+  {id: "categories", icon: "tag"},
+  {id: "profile", icon: "user"},
 ];
 
 export function LangToggle() {
-  const { lang, setLang, t } = useApp();
+  const {lang, setLang, t} = useApp();
   return (
     <div className="lang-toggle">
       <span>{t.language}</span>
       <span className="lang-toggle__switch">
-        {['id', 'en'].map((l) => (
+        {["id", "en"].map((l) => (
           <button
             key={l}
             type="button"
-            className={`lang-toggle__opt ${lang === l ? 'lang-toggle__opt--active' : ''}`}
+            className={`lang-toggle__opt ${lang === l ? "lang-toggle__opt--active" : ""}`}
             onClick={() => setLang(l)}
             aria-pressed={lang === l}
           >
-            {l === 'id' ? 'ID' : 'EN'}
+            {l === "id" ? "ID" : "EN"}
           </button>
         ))}
       </span>
@@ -46,15 +46,15 @@ export function LangToggle() {
 }
 
 function ShellView() {
-  const { view } = useApp();
-  if (view === 'transactions') return <Transactions />;
-  if (view === 'categories') return <Categories />;
-  if (view === 'profile') return <Profile />;
+  const {view} = useApp();
+  if (view === "transactions") return <Transactions />;
+  if (view === "categories") return <Categories />;
+  if (view === "profile") return <Profile />;
   return <Dashboard />;
 }
 
 export default function Shell() {
-  const { user, view, setView, t, setSheet } = useApp();
+  const {user, view, setView, t, setSheet} = useApp();
 
   const navLabels = {
     dashboard: t.dashboard,
@@ -72,9 +72,9 @@ export default function Shell() {
             <button
               key={n.id}
               type="button"
-              className={`nav__item ${view === n.id ? 'nav__item--active' : ''}`}
+              className={`nav__item ${view === n.id ? "nav__item--active" : ""}`}
               onClick={() => setView(n.id)}
-              aria-current={view === n.id ? 'page' : undefined}
+              aria-current={view === n.id ? "page" : undefined}
             >
               <Icon name={n.icon} size={18} strokeWidth={1.75} />
               {navLabels[n.id]}
@@ -93,7 +93,7 @@ export default function Shell() {
             <button
               type="button"
               className="avatar-btn"
-              onClick={() => setView('profile')}
+              onClick={() => setView("profile")}
               aria-label={t.profile}
             >
               {user?.photo ? (
@@ -123,9 +123,9 @@ export default function Shell() {
           <button
             key={n.id}
             type="button"
-            className={`tabbar__item ${view === n.id ? 'tabbar__item--active' : ''}`}
+            className={`tabbar__item ${view === n.id ? "tabbar__item--active" : ""}`}
             onClick={() => setView(n.id)}
-            aria-current={view === n.id ? 'page' : undefined}
+            aria-current={view === n.id ? "page" : undefined}
           >
             <Icon name={n.icon} size={22} strokeWidth={1.8} />
             <span>{navLabels[n.id]}</span>
@@ -133,17 +133,21 @@ export default function Shell() {
         ))}
       </nav>
 
-      {view !== 'categories' && view !== 'profile' && (
+      {view !== "categories" && view !== "profile" && (
         <button
           type="button"
           className="fab"
-          onClick={() => setSheet({ mode: 'add', tx: null })}
+          onClick={() => setSheet({mode: "add", tx: null})}
           aria-label={t.addTransaction}
           title={t.addTransaction}
         >
-          <span className="fab__handle" aria-hidden="true" />
-          <span className="fab__pad">
-            <Icon name="plus" size={22} strokeWidth={2.4} />
+          <span className="fab__stamp" aria-hidden="true">
+            <span className="fab__handle" />
+            <span className="fab__pad">
+              <Icon name="plus" size={22} strokeWidth={2.4} />
+              <span className="fab__brand"></span>
+            </span>
+            <span className="fab__base" />
           </span>
           <span className="fab__label">{t.addTransaction}</span>
         </button>
