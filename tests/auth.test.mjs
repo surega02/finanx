@@ -6,6 +6,7 @@ import { transformSync } from 'esbuild';
 import { createAuthSession } from '../src/lib/auth-session.js';
 import * as format from '../src/lib/format.js';
 import * as ledger from '../src/lib/ledger.js';
+import * as cloudLoad from '../src/lib/cloud-load.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 const deferred = () => {
@@ -155,7 +156,7 @@ function storeHarness() {
     return sandbox.module.exports;
   };
   const helpers = compile('../src/lib/supabase.js', { '@supabase/supabase-js': { createClient: () => null } }, { 'import.meta.env': '{}' });
-  return { Store: compile('../src/lib/store.js', { './format.js': format, './supabase.js': helpers, './ledger.js': ledger }).Store, cache };
+  return { Store: compile('../src/lib/store.js', { './format.js': format, './supabase.js': helpers, './ledger.js': ledger, './cloud-load.js': cloudLoad }).Store, cache };
 }
 
 function fakeCloud({ seedError = null, catsError = null, txError = null, writeError = null, writes = [] } = {}) {

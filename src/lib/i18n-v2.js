@@ -1,5 +1,6 @@
 export const V2 = {
   id: {
+    quickPeriod: 'Rentang tanggal', periodToday: 'Hari Ini', periodWeek: '7 Hari', periodMonth: '1 Bulan', periodCalendar: 'Bulan/Tahun', periodInclusive: 'Termasuk hari ini',
     year: 'Tahun', allMonths: 'Semua bulan', period: 'Pilih periode', monthlyBalance: 'Saldo Bulanan',
     provisional: 'Bulan berjalan · Sementara', futurePeriod: 'Periode mendatang', compared: 'Dibanding',
     aligned: 'Bandingkan periode setara', shorterPeriod: 'Periode pembanding lebih pendek', comparisonDetail: 'Detail perbandingan kategori',
@@ -27,6 +28,7 @@ export const V2 = {
     confirm: 'Konfirmasi', historical: 'Historis', previous: 'Sebelumnya', now: 'Sekarang', change: 'Perubahan',
   },
   en: {
+    quickPeriod: 'Date range', periodToday: 'Today', periodWeek: '7 Days', periodMonth: '1 Month', periodCalendar: 'Month/Year', periodInclusive: 'Includes today',
     year: 'Year', allMonths: 'All months', period: 'Select period', monthlyBalance: 'Monthly Balance',
     provisional: 'Current month · Provisional', futurePeriod: 'Future period', compared: 'Compared with',
     aligned: 'Compare aligned periods', shorterPeriod: 'Comparison period is shorter', comparisonDetail: 'Category comparison details',

@@ -1,6 +1,7 @@
 import { todayISO, monthRangeISO } from './format.js';
 import { appUserFromAuth, txToRow, catToRow, profileRow, rowToTx, rowToCat } from './supabase.js';
 import { migrateDemo, emptySettings, validateSettings, integer, validDate, totals } from './ledger.js';
+import { retryCloudLoad } from './cloud-load.js';
 
 const SYSTEM_CATEGORIES = [
   { id: 'income_salary', type: 'income', name: 'Salary', nameId: 'Gaji', icon: 'wallet', source: 'system' },
@@ -119,14 +120,6 @@ function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function cloudError(stage, error) {
-  const failure = new Error('Cloud account loading failed');
-  failure.stage = stage;
-  // Preserve a diagnostic code, never SQL details, tokens, or personal data.
-  failure.code = /^[A-Z0-9]{4,12}$/.test(error?.code || '') ? error.code : 'UNKNOWN';
-  return failure;
-}
-
 export class Store {
   constructor(initial, opts = {}) {
     this.data = deepClone(initial);
@@ -173,18 +166,18 @@ export class Store {
     store.data.user = user;
 
     const uid = user.uid;
-    const seedRes = await supabase.rpc('ensure_system_categories', { uid });
-    if (seedRes.error) {
-      if (['PGRST202', '42883'].includes(seedRes.error.code)) {
+    try {
+      await retryCloudLoad('categoriesSeed', () => supabase.rpc('ensure_system_categories', { uid }));
+    } catch (error) {
+      if (['PGRST202', '42883'].includes(error.code)) {
         // Older deployments may not have the RPC. Use the same per-user key,
         // enforced by RLS; never fall back to demo data or overwrite categories.
-        const fallback = await supabase.from('categories').upsert(
+        await retryCloudLoad('categoriesSeed', () => supabase.from('categories').upsert(
           SYSTEM_CATEGORIES.map((category) => catToRow(category, uid)),
           { onConflict: 'user_id,id', ignoreDuplicates: true }
-        );
-        if (fallback.error) throw cloudError('categoriesSeed', fallback.error);
+        ));
       } else {
-        throw cloudError('categoriesSeed', seedRes.error);
+        throw error;
       }
     }
 
@@ -196,8 +189,7 @@ export class Store {
   }
 
   static async readSnapshot(client, uid) {
-    const result = await client.rpc('ledger_snapshot_v2');
-    if (result.error) throw cloudError('snapshotRead', result.error);
+    const result = await retryCloudLoad('snapshotRead', () => client.rpc('ledger_snapshot_v2'));
     const data = result.data;
     if (!Array.isArray(data?.categories) || !Array.isArray(data?.transactions)) throw new Error('Invalid snapshot');
     if ([...data.categories, ...data.transactions].some(r => r.user_id !== uid) || data.settings && data.settings.user_id !== uid) throw new Error('ownership');

@@ -146,6 +146,9 @@ export default function App() {
               <p>{t.authDiagnostic}: <code>{authState.diagnostic.stage} / {authState.diagnostic.code}</code></p>
               {['23505', '42P10'].includes(authState.diagnostic.code) && <p>{t.authSchemaMismatch}</p>}
               {authState.diagnostic.code === '42501' && <p>{t.authAccessDenied}</p>}
+              {['NETWORK', 'REQUESTFAIL'].includes(authState.diagnostic.code) && <p>{t.authConnectionIssue}</p>}
+              {authState.diagnostic.code === 'CLIENTERR' && <p>{t.authClientIssue}</p>}
+              {authState.diagnostic.code === 'ABORTED' && <p>{t.authRequestStopped}</p>}
             </>
           )}
           <button type="button" className="btn btn--ink" onClick={() => authState.error === 'logoutFailed' ? signOut() : auth.current.retry()}>

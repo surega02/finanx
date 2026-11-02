@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 import * as ledger from '../src/lib/ledger.js';
+import * as cloudLoad from '../src/lib/cloud-load.js';
 import * as format from '../src/lib/format.js';
 import { makeCSV, csvText } from '../src/lib/csv.js';
 import { parseNavigation, safeReturn, routeURL } from '../src/lib/navigation.js';
@@ -21,7 +22,7 @@ function harness(opts) {
     return sandbox.module.exports;
   };
   const helpers = compile('../src/lib/supabase.js', { '@supabase/supabase-js': { createClient: () => null } }, { 'import.meta.env': '{}' });
-  const { Store } = compile('../src/lib/store.js', { './format.js': format, './ledger.js': ledger, './supabase.js': helpers });
+  const { Store } = compile('../src/lib/store.js', { './format.js': format, './ledger.js': ledger, './cloud-load.js': cloudLoad, './supabase.js': helpers });
   return { Store, cache, storage, store: new Store(ledger.migrateDemo(state()), opts) };
 }
 

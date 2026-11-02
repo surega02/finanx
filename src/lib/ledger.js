@@ -38,6 +38,7 @@ export function filterHistory(rows, filters = {}, categories = [], lang = 'id') 
   const lookup = new Map(categories.map(c => [c.id, c]));
   const q = (filters.q || '').trim().toLocaleLowerCase();
   return sortHistory(rows.filter(t => {
+    if (filters.startDate && t.date < filters.startDate || filters.endDate && t.date > filters.endDate) return false;
     if (t.deleted_at || (filters.year && t.date.slice(0, 4) !== String(filters.year).padStart(4, '0'))) return false;
     if (filters.month && filters.month !== 'all' && Number(t.date.slice(5, 7)) !== Number(filters.month)) return false;
     if (filters.type && filters.type !== 'all' && t.type !== filters.type) return false;

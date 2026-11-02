@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../App.jsx';
 import { Icon } from '../lib/icons.jsx';
-import { money, shortDateNoYear, monthName, monthRangeISO } from '../lib/format.js';
+import { money, shortDate, shortDateNoYear, monthName } from '../lib/format.js';
 import Stamp from './Stamp.jsx';
 import Toast from './Toast.jsx';
 import TransactionSheet from './TransactionSheet.jsx';
@@ -9,6 +9,8 @@ import ExportSheet from './ExportSheet.jsx';
 import TransactionActions from './TransactionActions.jsx';
 import { filterHistory } from '../lib/ledger.js';
 import { routeURL, safeReturn } from '../lib/navigation.js';
+import { historyPeriod } from '../lib/history-period.js';
+import { useLocalDay } from '../lib/use-local-day.js';
 
 const PAGE_SIZE = 10;
 const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
@@ -17,7 +19,9 @@ export default function Transactions() {
   const { store, t, lang, setSheet, pushToast, navigation, navigate, revision } = useApp();
   const [exporting, setExporting] = useState(false);
   const [busyId, setBusyId] = useState(null);
-  const { type: typeFilter, category: categoryFilter, month: monthValue, year, q: query, page } = navigation;
+  const { type: typeFilter, category: categoryFilter, month: monthValue, year, range, q: query, page } = navigation;
+  const today = useLocalDay();
+  const dates = historyPeriod(range, today);
   const monthFilter = monthValue === 'all' ? 'all' : String(monthValue - 1);
   const change = (patch, pagination = false) => navigate(routeURL('transactions', { ...navigation, ...patch, page: pagination ? patch.page : 1, view: undefined }), true);
   const setTypeFilter = type => change({ type });
@@ -27,10 +31,17 @@ export default function Transactions() {
   const setPage = page => change({ page }, true);
 
   const categories = store.state.categories;
+  const filters = useMemo(() => ({
+    ...(dates ? { startDate: dates.startDate, endDate: dates.endDate } : { year, month: monthValue }),
+    type: typeFilter, category: categoryFilter, q: query,
+  }), [dates?.startDate, dates?.endDate, year, monthValue, typeFilter, categoryFilter, query]);
+  const periodSummary = dates
+    ? `${shortDate(dates.startDate, lang)}${dates.startDate === dates.endDate ? '' : ` – ${shortDate(dates.endDate, lang)}`} · ${t.periodInclusive}`
+    : `${year} · ${monthValue === 'all' ? t.allMonths : monthName(monthValue - 1, lang)}`;
 
   const filtered = useMemo(() => {
-    return filterHistory(store.state.transactions, { year, month: monthValue, type: typeFilter, category: categoryFilter, q: query }, categories, lang);
-  }, [store, revision, typeFilter, categoryFilter, monthValue, year, query, lang]);
+    return filterHistory(store.state.transactions, filters, categories, lang);
+  }, [store, revision, filters, categories, lang]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -54,8 +65,17 @@ export default function Transactions() {
       <h1 className="page-title">{t.transactions}</h1>
       <div className="period-controls">{safeReturn(navigation.return) && <button className="btn btn--ghost" onClick={() => navigate(safeReturn(navigation.return))}>{t.backDashboard}</button>}<button className="btn btn--ghost" onClick={() => setExporting(true)}>{t.exportData}</button></div>
 
+      <div className="history-period">
+        <div className="seg history-period__choices" role="group" aria-label={t.quickPeriod}>
+          {[['today', t.periodToday], ['7d', t.periodWeek], ['month', t.periodMonth], ['calendar', t.periodCalendar]].map(([value, label]) => (
+            <button key={value} type="button" className={`seg__btn ${range === value ? 'seg__btn--active' : ''}`} aria-pressed={range === value} onClick={() => change({ range: value })}>{label}</button>
+          ))}
+        </div>
+        {dates && <p className="ledger-note history-period__summary" aria-live="polite" aria-atomic="true">{periodSummary}</p>}
+      </div>
+
       <div className="filters" role="search">
-        <label>{t.year}<input key={year} type="number" className="input year-input" aria-label={t.year} min="1" max="9999" defaultValue={year} onBlur={e => { const y = Number(e.target.value); if (Number.isInteger(y) && y >= 1 && y <= 9999) change({ year: y }); else e.target.value = year; }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label>
+        {!dates && <label>{t.year}<input key={year} type="number" className="input year-input" aria-label={t.year} min="1" max="9999" defaultValue={year} onBlur={e => { const y = Number(e.target.value); if (Number.isInteger(y) && y >= 1 && y <= 9999) change({ year: y }); else e.target.value = year; }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label>}
         <div className="seg" role="group" aria-label={t.typeFilter}>
           <button
             type="button"
@@ -80,7 +100,7 @@ export default function Transactions() {
           </button>
         </div>
 
-        <div className="select-wrap">
+        {!dates && <div className="select-wrap">
           <select
             aria-label={t.month}
             value={monthFilter}
@@ -93,7 +113,7 @@ export default function Transactions() {
               </option>
             ))}
           </select>
-        </div>
+        </div>}
 
         <div className="select-wrap">
           <select
@@ -127,7 +147,7 @@ export default function Transactions() {
           <div className="empty__stamp">
             <Icon name="list" size={26} strokeWidth={1.6} />
           </div>
-          <h3 className="empty__title">{query || categoryFilter !== 'all' || typeFilter !== 'all' ? t.noResults : t.noTransactions}</h3>
+          <h3 className="empty__title">{dates || query || categoryFilter !== 'all' || typeFilter !== 'all' ? t.noResults : t.noTransactions}</h3>
           <p className="empty__text">{t.noTransactionsHint}</p>
           <button type="button" className="btn btn--primary" onClick={() => setSheet({ mode: 'add', tx: null })}>
             <Icon name="stamp" size={16} />
@@ -202,7 +222,7 @@ export default function Transactions() {
 
       <Toast />
       <TransactionSheet />
-      {exporting && <ExportSheet filters={{ year, month: monthValue, type: typeFilter, category: categoryFilter, q: query }} summary={`${year} · ${monthValue === 'all' ? t.allMonths : monthName(monthValue - 1, lang)} · ${t[typeFilter] || t.all} · ${categoryFilter === 'all' ? t.allCategories : store.categoryName(categories.find(c => c.id === categoryFilter), lang)} · ${query}`} onClose={() => setExporting(false)} />}
+      {exporting && <ExportSheet filters={filters} summary={`${periodSummary} · ${t[typeFilter] || t.all} · ${categoryFilter === 'all' ? t.allCategories : store.categoryName(categories.find(c => c.id === categoryFilter), lang)} · ${query}`} onClose={() => setExporting(false)} />}
     </>
   );
 }

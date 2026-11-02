@@ -53,6 +53,12 @@ try {
     const page = await context.newPage();
     page.on('pageerror', e => { errors.push(e.message); console.error('BROWSER ERROR', e.stack); });
     await page.setViewport({ width, height: 900, isMobile: width === 360, hasTouch: width === 360 });
+    // Keep demo rows in a known month so CSV pagination is tested on any run date.
+    await page.evaluateOnNewDocument(() => {
+      const RealDate = Date;
+      const instant = RealDate.parse('2026-10-26T10:00:00+07:00');
+      window.Date = class extends RealDate { constructor(...args) { super(...(args.length ? args : [instant])); } static now() { return instant; } };
+    });
     if (width === 360) await page.setUserAgent('Mozilla/5.0 (Linux; Android 13; Pixel 6a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36');
     await page.goto(`${base}/?view=dashboard&year=2025&month=12`); await login(page);
     await page.waitForSelector('.trend');
@@ -119,13 +125,16 @@ try {
     await textClick(page, nav, 'Transaksi'); await page.waitForSelector('.txlist__row');
     await textClick(page, '.period-controls button', 'Ekspor Data'); await page.waitForSelector('#export-title');
     await capture(page, `export-${width}.png`);
-    const downloads = path.join(out, `downloads-${width}`); fs.mkdirSync(downloads, { recursive: true });
+    const downloads = path.join(out, `downloads-${width}-${Date.now()}`); fs.mkdirSync(downloads, { recursive: true });
     const cdp = await page.createCDPSession(); await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
     await textClick(page, '.sheet button', 'Unduh CSV');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent.includes('browser'));
     await page.waitForFunction(() => !document.querySelector('.sheet button:disabled'));
-    await new Promise(r => setTimeout(r, 300));
-    const files = fs.readdirSync(downloads).filter(f => f.endsWith('.csv'));
+    let files = [];
+    for (let attempt = 0; attempt < 50 && !files.length; attempt++) {
+      files = fs.readdirSync(downloads).filter(f => f.endsWith('.csv'));
+      if (!files.length) await new Promise(resolve => setTimeout(resolve, 100));
+    }
     check(`${width} CSV download complete`, files.length > 0);
     const csv = fs.readFileSync(path.join(downloads, files.at(-1)), 'utf8');
     check(`${width} CSV includes >10 rows and BOM`, csv.charCodeAt(0) === 0xfeff && csv.split('\r\n').length > 12);
