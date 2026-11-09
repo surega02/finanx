@@ -1,5 +1,5 @@
 // Keep identity and its data in one state; discard work from earlier sessions.
-export function createAuthSession({ client, loadStore, onChange }) {
+export function createAuthSession({ client, loadStore, onChange, callbackExpected = false }) {
   let generation = 0;
   let stopped = false;
   let signingOut = false;
@@ -46,14 +46,28 @@ export function createAuthSession({ client, loadStore, onChange }) {
     }, 0);
   };
 
-  const refresh = async () => {
+  const refresh = async (initialize = false) => {
     if (stopped || signingOut || logoutPending) return;
     const ticket = ++generation;
     clear('loading');
     try {
+      if (initialize) {
+        // getSession() waits for initialization but does not return URL callback
+        // errors. Read that result before treating a missing session as logout.
+        const { error } = await client.auth.initialize();
+        if (stopped || ticket !== generation || signingOut) return;
+        if (error) {
+          clear('signedOut', 'signInCallbackFailed');
+          return;
+        }
+      }
       const { data, error } = await client.auth.getSession();
       if (stopped || ticket !== generation || signingOut) return;
       if (error) throw error;
+      if (initialize && callbackExpected && !data.session) {
+        clear('signedOut', 'signInCallbackFailed');
+        return;
+      }
       accept(data.session, true);
     } catch {
       if (!stopped && ticket === generation) clear('error', 'cloudLoadFailed');
@@ -62,10 +76,14 @@ export function createAuthSession({ client, loadStore, onChange }) {
 
   return {
     start() {
-      subscription = client.auth.onAuthStateChange((_event, session) => accept(session)).data.subscription;
-      void refresh();
+      subscription = client.auth.onAuthStateChange((event, session) => {
+        // Startup is handled by refresh; INITIAL_SESSION must not mask a
+        // callback error or overwrite a newer SIGNED_IN/SIGNED_OUT event.
+        if (event !== 'INITIAL_SESSION') accept(session);
+      }).data.subscription;
+      void refresh(true);
     },
-    retry: refresh,
+    retry: () => refresh(),
     async signOut() {
       if (signingOut) return;
       signingOut = true;

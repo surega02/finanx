@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
+import { authCallbackOptions } from './auth-callback.js';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = url && anonKey ? createClient(url, anonKey) : null;
+const callback = authCallbackOptions(typeof window === 'undefined' ? null : window.location);
+export const authCallbackExpected = callback.callbackExpected;
+export const supabase = url && anonKey ? createClient(url, anonKey, { auth: callback.auth }) : null;
 export const isCloudEnabled = !!supabase;
 
 const ISO_DAY = (d) =>

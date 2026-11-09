@@ -7,6 +7,7 @@ import { createAuthSession } from '../src/lib/auth-session.js';
 import * as format from '../src/lib/format.js';
 import * as ledger from '../src/lib/ledger.js';
 import * as cloudLoad from '../src/lib/cloud-load.js';
+import * as authCallback from '../src/lib/auth-callback.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 const deferred = () => {
@@ -17,7 +18,7 @@ const deferred = () => {
 const userSession = (id) => ({ user: { id, email: `${id}@example.test` } });
 const fakeStore = (id) => ({ id, deactivated: false, deactivate() { this.deactivated = true; } });
 
-function harness(loadStore, initial = null) {
+function harness(loadStore, initial = null, { initialize = async () => ({ error: null }), getSession, callbackExpected = false } = {}) {
   let listener;
   let session = initial;
   let logoutError = null;
@@ -25,20 +26,97 @@ function harness(loadStore, initial = null) {
   let state;
   let loads = 0;
   const client = { auth: {
+    initialize,
     onAuthStateChange(callback) { listener = callback; return { data: { subscription: { unsubscribe() {} } } }; },
-    async getSession() { return { data: { session }, error: sessionError }; },
+    getSession: getSession || (async () => ({ data: { session }, error: sessionError })),
     async signOut() { if (!logoutError) session = null; return { error: logoutError }; },
   } };
-  const controller = createAuthSession({ client, loadStore: (...args) => { loads++; return loadStore(...args); }, onChange: (next) => { state = next; } });
+  const controller = createAuthSession({ client, callbackExpected, loadStore: (...args) => { loads++; return loadStore(...args); }, onChange: (next) => { state = next; } });
   controller.start();
   return {
     controller,
     get state() { return state; }, get loads() { return loads; },
     emit(next) { session = next; listener(next ? 'SIGNED_IN' : 'SIGNED_OUT', next); },
+    emitInitial(next) { listener('INITIAL_SESSION', next); },
     setLogoutError(error) { logoutError = error; },
     setSessionError(error) { sessionError = error; },
   };
 }
+
+test('new OAuth logins use PKCE and existing implicit callbacks remain supported', () => {
+  assert.equal(authCallback.authCallbackOptions(null).auth.flowType, 'pkce');
+  assert.equal(authCallback.authCallbackOptions({ search: '?code=synthetic', hash: '' }).callbackExpected, true);
+  const legacy = authCallback.authCallbackOptions({ hash: '#access_token=synthetic&refresh_token=synthetic' });
+  assert.equal(legacy.auth.flowType, 'implicit');
+  assert.equal(legacy.callbackExpected, true);
+  assert.equal(authCallback.authCallbackOptions({ search: '?view=transactions' }).callbackExpected, false);
+});
+
+test('callback waits for SDK initialization and opens the authenticated store', async () => {
+  const init = deferred();
+  const h = harness((_, user) => fakeStore(user.id), userSession('A'), {
+    initialize: () => init.promise, callbackExpected: true,
+  });
+  try {
+    h.emitInitial(null);
+    await tick();
+    assert.equal(h.state.status, 'loading');
+    assert.equal(h.loads, 0);
+    init.resolve({ error: null });
+    await tick();
+    assert.equal(h.state.status, 'ready');
+    assert.equal(h.state.store.id, 'A');
+    assert.equal(h.loads, 1);
+  } finally { h.controller.stop(); }
+});
+
+test('callback initialization errors are visible instead of a silent signed-out session', async () => {
+  const init = deferred();
+  const h = harness((_, user) => fakeStore(user.id), null, {
+    initialize: () => init.promise, callbackExpected: true,
+  });
+  try {
+    h.emitInitial(null);
+    init.resolve({ error: new Error('PRIVATE OAuth callback details') });
+    await tick();
+    h.emitInitial(null);
+    assert.equal(h.state.status, 'signedOut');
+    assert.equal(h.state.error, 'signInCallbackFailed');
+    assert.equal(h.loads, 0);
+    assert.equal(JSON.stringify(h.state).includes('PRIVATE'), false);
+    h.emit(userSession('B'));
+    await tick();
+    assert.equal(h.state.status, 'ready');
+    assert.equal(h.state.store.id, 'B');
+  } finally { h.controller.stop(); }
+});
+
+test('callback without a session is reported, ordinary signed-out startup is not', async () => {
+  for (const callbackExpected of [false, true]) {
+    const h = harness(() => fakeStore('A'), null, { callbackExpected });
+    try {
+      await tick();
+      assert.equal(h.state.status, 'signedOut');
+      assert.equal(h.state.error, callbackExpected ? 'signInCallbackFailed' : null);
+      assert.equal(h.loads, 0);
+    } finally { h.controller.stop(); }
+  }
+});
+
+test('newer auth events win over delayed startup and stale INITIAL_SESSION', async () => {
+  for (const next of [null, userSession('B')]) {
+    const init = deferred();
+    const h = harness((_, user) => fakeStore(user.id), userSession('A'), { initialize: () => init.promise });
+    try {
+      h.emit(next);
+      init.resolve({ error: null });
+      await tick();
+      h.emitInitial(userSession('A'));
+      assert.equal(h.state.status, next ? 'ready' : 'signedOut');
+      assert.equal(h.state.user?.id ?? null, next?.user.id ?? null);
+    } finally { h.controller.stop(); }
+  }
+});
 
 test('account switch clears A immediately and only opens B with B data', async () => {
   const b = deferred();
@@ -155,7 +233,7 @@ function storeHarness() {
     vm.runInNewContext(code, sandbox);
     return sandbox.module.exports;
   };
-  const helpers = compile('../src/lib/supabase.js', { '@supabase/supabase-js': { createClient: () => null } }, { 'import.meta.env': '{}' });
+  const helpers = compile('../src/lib/supabase.js', { './auth-callback.js': authCallback, '@supabase/supabase-js': { createClient: () => null } }, { 'import.meta.env': '{}' });
   return { Store: compile('../src/lib/store.js', { './format.js': format, './supabase.js': helpers, './ledger.js': ledger, './cloud-load.js': cloudLoad }).Store, cache };
 }
 

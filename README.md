@@ -64,6 +64,10 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 5. Untuk V2, jalankan migrasi additive [202610220002_financial_settings.sql](supabase/migrations/202610220002_financial_settings.sql) melalui runner versi **sesudah** preflight key V1. Jangan memakai schema instalasi baru untuk memperbaiki database lama. Lihat runbook V2 sebelum deployment.
 6. Restart development server.
 
+Pada Supabase Authentication → URL Configuration, gunakan `https://finanx-me.vercel.app` sebagai Site URL produksi dan tambahkan alamat tersebut serta `http://localhost:5173` ke Redirect URLs. Google Cloud tetap memakai callback Supabase `https://<project-ref>.supabase.co/auth/v1/callback`.
+
+Login baru menggunakan PKCE. SDK menyimpan verifier di browser, menukar kode callback menjadi sesi, lalu aplikasi memuat data sebelum membuka dashboard. Selesaikan login pada browser dan origin yang sama; callback implicit dari login yang sudah berjalan sebelum pembaruan tetap didukung. Kegagalan callback ditampilkan pada halaman login tanpa memaparkan token atau detail provider.
+
 Panduan baseline tersedia di [SUPABASE-v1.md](docs/v1/SUPABASE-v1.md).
 
 ## Pengujian
@@ -71,10 +75,13 @@ Panduan baseline tersedia di [SUPABASE-v1.md](docs/v1/SUPABASE-v1.md).
 ```bash
 npm test
 npm run build
+npm run test:auth:browser
 npm run test:browser
 ```
 
 Tes browser memerlukan Chrome lokal (`CHROME_PATH` untuk lokasi alternatif), membuat build demo terisolasi, dan menyimpan bukti/benchmark di `.impeccable/review/`. Emulasi 360px/CPU 4× bukan bukti pengujian Android fisik. Pengujian SQL memakai cluster disposable tersendiri; jangan menjalankan fixture `tests/database-v2.sql` di proyek pengguna.
+
+Tes `test:auth:browser` memakai aplikasi dan SDK Supabase asli dengan respons OAuth/API tiruan, tanpa akun Google atau database produksi. Cakupannya: callback PKCE membuka dashboard, sesi bertahan setelah refresh, pertukaran kode gagal, verifier tidak tersedia, izin ditolak, dan kompatibilitas callback implicit lama. Login Google nyata serta konfigurasi proyek Supabase produksi tetap perlu diverifikasi setelah deployment.
 
 ## Build produksi
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } fro
 import { parseNavigation, routeURL } from './lib/navigation.js';
 import { Store, currentMonth } from './lib/store.js';
 import { LANG, LANGUAGES } from './lib/i18n.js';
-import { supabase, isCloudEnabled, appUserFromAuth } from './lib/supabase.js';
+import { supabase, isCloudEnabled, appUserFromAuth, authCallbackExpected } from './lib/supabase.js';
 import { createAuthSession } from './lib/auth-session.js';
 import Login from './components/Login.jsx';
 import Shell from './components/Shell.jsx';
@@ -57,6 +57,7 @@ export default function App() {
 
     const controller = createAuthSession({
       client: supabase,
+      callbackExpected: authCallbackExpected,
       loadStore: Store.loadCloud,
       onChange: (next) => {
         setAuthState(next);
@@ -161,7 +162,7 @@ export default function App() {
       ) : user ? (
         <Shell />
       ) : (
-        <Login />
+        <Login authError={authState.error} />
       )}
     </AppContext.Provider>
   );

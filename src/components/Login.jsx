@@ -4,7 +4,7 @@ import { useApp } from '../App.jsx';
 import { supabase, isCloudEnabled } from '../lib/supabase.js';
 import logo from '../assets/logo.png';
 
-export default function Login() {
+export default function Login({ authError }) {
   const { t, setUser, store } = useApp();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -57,6 +57,7 @@ export default function Login() {
           {busy ? t.signingIn : t.signIn}
         </button>
         {failed && <p role="alert">{t.signInFailed}</p>}
+        {!failed && authError && <p role="alert">{t[authError]}</p>}
         {!isCloudEnabled && (
           <p className="login__demo-note">
             <Icon name="stamp" size={13} />

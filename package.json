@@ -8,6 +8,7 @@
     "test:v2": "node --test tests/v2.test.mjs",
     "test:browser": "node scripts/test-v2-browser.mjs",
     "test:auth": "node --test tests/auth.test.mjs",
+    "test:auth:browser": "node scripts/test-auth-browser.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
