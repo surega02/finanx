@@ -7,8 +7,8 @@ export function authCallbackOptions(location) {
   return {
     callbackExpected,
     auth: {
-      // Finish an in-flight login from the previous implicit-flow deployment.
-      flowType: hash.has('access_token') ? 'implicit' : 'pkce',
+      // Never let URL tokens downgrade PKCE or replace the browser's identity.
+      flowType: 'pkce',
       detectSessionInUrl: true,
       persistSession: true,
       autoRefreshToken: true,

@@ -43,12 +43,22 @@ function harness(loadStore, initial = null, { initialize = async () => ({ error:
   };
 }
 
-test('new OAuth logins use PKCE and existing implicit callbacks remain supported', () => {
+test('OAuth always uses PKCE, including token-bearing callback URLs', () => {
   assert.equal(authCallback.authCallbackOptions(null).auth.flowType, 'pkce');
   assert.equal(authCallback.authCallbackOptions({ search: '?code=synthetic', hash: '' }).callbackExpected, true);
-  const legacy = authCallback.authCallbackOptions({ hash: '#access_token=synthetic&refresh_token=synthetic' });
-  assert.equal(legacy.auth.flowType, 'implicit');
-  assert.equal(legacy.callbackExpected, true);
+  for (const location of [
+    { hash: '#access_token=synthetic&refresh_token=synthetic' },
+    { search: '?access_token=synthetic&refresh_token=synthetic' },
+    { hash: '#access_%74oken=synthetic' },
+    { hash: '#access_token=&access_token=synthetic' },
+    { search: '?code=synthetic', hash: '#access_token=synthetic' },
+    { search: '?refresh_token=synthetic', hash: '#access_token=synthetic' },
+    { search: '?access_token=', hash: '#access_token=synthetic' },
+  ]) {
+    const callback = authCallback.authCallbackOptions(location);
+    assert.equal(callback.auth.flowType, 'pkce');
+    assert.equal(callback.callbackExpected, true);
+  }
   assert.equal(authCallback.authCallbackOptions({ search: '?view=transactions' }).callbackExpected, false);
 });
 

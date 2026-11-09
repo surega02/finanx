@@ -66,7 +66,7 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 
 Pada Supabase Authentication → URL Configuration, gunakan `https://finanx-me.vercel.app` sebagai Site URL produksi dan tambahkan alamat tersebut serta `http://localhost:5173` ke Redirect URLs. Google Cloud tetap memakai callback Supabase `https://<project-ref>.supabase.co/auth/v1/callback`.
 
-Login baru menggunakan PKCE. SDK menyimpan verifier di browser, menukar kode callback menjadi sesi, lalu aplikasi memuat data sebelum membuka dashboard. Selesaikan login pada browser dan origin yang sama; callback implicit dari login yang sudah berjalan sebelum pembaruan tetap didukung. Kegagalan callback ditampilkan pada halaman login tanpa memaparkan token atau detail provider.
+Login wajib menggunakan PKCE. SDK menyimpan verifier di browser, menukar kode callback menjadi sesi, lalu aplikasi memuat data sebelum membuka dashboard. Selesaikan login pada browser dan origin yang sama. Callback implicit yang membawa token pada URL ditolak; login lama yang masih menunggu callback harus diulang melalui tombol masuk. Sesi sah yang sudah tersimpan tetap dapat dipulihkan setelah memuat ulang URL bersih. Kegagalan callback ditampilkan pada halaman login tanpa memaparkan token atau detail provider.
 
 Panduan baseline tersedia di [SUPABASE-v1.md](docs/v1/SUPABASE-v1.md).
 
@@ -81,7 +81,7 @@ npm run test:browser
 
 Tes browser memerlukan Chrome lokal (`CHROME_PATH` untuk lokasi alternatif), membuat build demo terisolasi, dan menyimpan bukti/benchmark di `.impeccable/review/`. Emulasi 360px/CPU 4× bukan bukti pengujian Android fisik. Pengujian SQL memakai cluster disposable tersendiri; jangan menjalankan fixture `tests/database-v2.sql` di proyek pengguna.
 
-Tes `test:auth:browser` memakai aplikasi dan SDK Supabase asli dengan respons OAuth/API tiruan, tanpa akun Google atau database produksi. Cakupannya: callback PKCE membuka dashboard, sesi bertahan setelah refresh, pertukaran kode gagal, verifier tidak tersedia, izin ditolak, dan kompatibilitas callback implicit lama. Login Google nyata serta konfigurasi proyek Supabase produksi tetap perlu diverifikasi setelah deployment.
+Tes `test:auth:browser` memakai aplikasi dan SDK Supabase asli dengan respons OAuth/API tiruan, tanpa akun Google atau database produksi. Cakupannya: callback PKCE membuka dashboard, sesi bertahan setelah refresh, pertukaran kode gagal, verifier tidak tersedia, izin ditolak, serta penolakan token URL melalui query/fragment, encoded key, duplicate key dan campuran kode/token. Tautan token juga diuji terhadap browser yang sudah masuk: sesi tersimpan tidak boleh berganti dan tetap pulih setelah refresh URL bersih. Set `AUTH_BROWSER_OUT_DIR` untuk menyimpan build tes di lokasi sementara alternatif. Login Google nyata serta konfigurasi proyek Supabase produksi tetap perlu diverifikasi setelah deployment.
 
 ## Build produksi
 
